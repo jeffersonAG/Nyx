@@ -1,0 +1,3 @@
+Bibliotecas utilizadas para el proyecto 
+Biblioteca numpy
+Biblioteca Torch
