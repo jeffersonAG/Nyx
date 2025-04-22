@@ -1,1 +1,26 @@
 Proyecto: NYX
+Autor: Jefferson Arias Gutierrez 
+Proposito: IA personal 
+Objetivo del Proyecto :
+El objetivo de NYX es la ayuda ala realizacion de los proyectos los cuales  requieren una segunda opinion 
+NIX tiene como objetivo  ayudar en calculos matematicos , fisicos , electronicos y gestion de tiempos y 
+recursos tanto economicos asi como activos fisicos , el fin es que en toda mquinaria creada  tenga a NIX 
+esto con el fin de ayudar e impulsar el desarrollo tecnologico de los futuros proyectos , este es un 
+proyecto a mediano plazo pues el objetivo es que la propia IA ya sea por la programacion de su red neuronal 
+tenga la capacidad de mejorarse a si misma , a tal punto que esta se pueda entrenar con los proyectos y con
+informacion dada por el creador.
+
+Partes que conforman el proyecto :
+------>Red  neuronal
+------>Sistema de voz sintetico 
+------>sistema de escritura en diferentes 
+------>Procesamiento de imagenes
+------>procesamiento de ecuaciones matematicas compejas 
+------>sistema de ecuaciones fisicas complejas 
+------>sistema de entendimineto de diagramas de circuitos de manera avanzada 
+------>sistema de fomulaciones quimicas (organicas, inorganicas , analiticas , bioquimica )
+------>sistema de telecomunicaciones , redes 
+------>sistema de analisis , riegos , precauciones y defensa de ciber ataques de menor a mayor escala 
+------>Sistema de gestion de tiempos e organizacion
+------>sistema de gestion de dinero 
+
