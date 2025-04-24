@@ -1,3 +1,46 @@
-Bibliotecas utilizadas para el proyecto 
-Biblioteca numpy
-Biblioteca Torch
+Aprendrizaje automatico
+Para generar un aprendizaje automatico se nesecita primero saber como es el funcionamiento de una neurona , esto 
+con el fin de poder diseñar una red neuronal funcional 
+
+Neurona: Una neurona recibe estimulo electrico , este envia la informacion del estimulo a otra neurona , esta nueva 
+neurona procesa los datos y envia otro estimulo electrico con la nueva informacion y asi continua hasta poder dar la respuesta 
+, este conjunto de envio de estimulos y procesamiento de datos es lo que conforma la red neuronal 
+
+"La  red neuronal va a ser tan eficienten como se le someta ala informacion y los parametro los cuales sea sometido , esto quiere decir 
+que cada neurona tendra parametros  los cuales se son usados para filtrar las opciones y asi poder dar una respuesta correcta 
+la idea no es programar cada neurona pues la idea es que las neuronas se puedan programar a si misma "
+                                                                                                       J.G.R
+ Ante todo se tiene que tomar en cuenta como se toma una desicion en los casos de la vida real pues si pues  las decisiones que tomara la red neuronal 
+ sigue la misma logica de una desicion como la tomamos nosotros  , este metodo se puede  dividir en tres secciones 
+
+ ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ | 1. primero se tienen los factores de entrada  los cuales quiere apoyar la desición , estos son los datos de entrada , estos datos pueden variar              |
+ |                                                                                                                                                              |
+ | 2.Con los datos de entrada se evaluaran los datos con unos factores y parametros pues con esto se puede filtar los datos y tener mejor claridad .            |
+ |                                                                                                                                                              |
+ | 3.Se da un resultado de la filtracion de datos pues con esto se optiene una respuesta                                                                        |
+ ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+¨Se tiene que tener en cuenta algo , en el caso de una red neuronal este proceso se repita  (n)  cantidad de veces , hasta tener una respuesta ,  esto perimte tener 
+respuestas mas complejas , esto conforma una red neuronal y la red sera mas complejas dependiendo de la cantidad de neuronas que esten   en la red¨
+                                                                                                                                                        J.G.R
+Cada neurona esta conectada por una funcion y esta coneccion tendra una importancia , esta importancia se le conoce como peso 
+
+importancia == peso 
+
+El peso permite darle una prioridad a los valores de entrada , esto permite  darle ala red neuronal una facilidad ala hora de realizar la toma de desiciones 
+
+Despues donde se toman las desiciones  se le conoce como Perceptron el cual esta compuesto por valores de entrada tambien llamados Factores/Entradas
+
+Valores de entrada == Factores/Entradas 
+
+Peso de los facctores  -----> Normalmente se colocan en las conexiones
+ 
+Dentro del Perceptron se coloca un umbral y una funcion de activacion 
+
+¨oficialmente en lugar de unmbral se usa el ¨sesgo¨ , que es lo inverso al umbral. pero para fines explicativos es mas sencillo el umbral 
+
+si se juega con los pesos y las entradas  se pueden optener distintos tipos de respuestas 
+
+un perceptron puede tener (n) cantidad de entradas y ese perceptron puede ser a su vez  una entrada  para otro perceptro y asi susecivamente , esto se le conoce como 
+red multicapa o red neuronal 
