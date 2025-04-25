@@ -40,7 +40,26 @@ Dentro del Perceptron se coloca un umbral y una funcion de activacion
 
 ¨oficialmente en lugar de unmbral se usa el ¨sesgo¨ , que es lo inverso al umbral. pero para fines explicativos es mas sencillo el umbral 
 
+sesgo == Umbral 
+
 si se juega con los pesos y las entradas  se pueden optener distintos tipos de respuestas 
 
 un perceptron puede tener (n) cantidad de entradas y ese perceptron puede ser a su vez  una entrada  para otro perceptro y asi susecivamente , esto se le conoce como 
 red multicapa o red neuronal 
+
+-------------------------
+|Aprendizaje automatico |
+-------------------------
+La redes neuronales como las que se usan hoy en dia se componen de una cantidad muy grande de capas y de (n) perceptrones con (n)cantidad de enlaces con (n) cantidad de pesos
+ala hora de modificar los pesos y los sesgos , pero ala hora de modificar los datos estos se vuelve imposible por la cantidad perceptrones , pesos y sesgos , por esto se usa el 
+aprendizaje automatico  
+
+Capa densa : son las capas donde cada perceptron de una capa esta conectado a todos los perceptrones  de la capa siguiente 
+
+¨La unica capa que no tiene sesgos es la capa de entrada  que es la capa donde se ingresa los valores de entrada¨ 
+ 
+
+ Para esto se va a dar (n) entradas con (n) respuestas , despues de esto
+ el algoritmo va a determinar los pesos y el sesgo , dependiendo de los parametros dados las respuestas pueden salir muy mal 
+ pero el objetivo es que el algoritmo pueda calibarase para determinar por si sola  el peso y los sesgos , para su automatica configuracion .
+ 
