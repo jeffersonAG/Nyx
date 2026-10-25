@@ -533,3 +533,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .due-date-field { flex: 1 1 100%; }
   .profile-form button { width: 100%; }
 }
+
+.nyx-login-identity { font:10px 'Courier New',monospace;color:#d9a4b5;max-width:165px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.nyx-logout { font:11px 'Courier New',monospace;border:1px solid #74334a;color:#efbad0;background:#29131d;padding:8px 10px;border-radius:4px; }
+.nyx-logout:hover{background:#522038;border-color:#e23b66}
+@media(max-width:680px) {.nyx-login-identity {display:none}.nyx-logout{font-size:10px;padding:7px}}

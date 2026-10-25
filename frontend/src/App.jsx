@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './styles.css';
 import { splitSpeechText } from './voiceChunks.js';
+import AuthPortal from './AuthPortal.jsx';
+import AdminPanel from './AdminPanel.jsx';
+
+let csrfToken = '';
+
 
 const MENU = [
   { id: 'chat', icon: '◇', label: 'CONVERSACIÓN' },
@@ -13,13 +18,17 @@ const MENU = [
 async function api(path, options = {}) {
   let res;
   try {
-    res = await fetch(path, { ...options,
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    res = await fetch(path, { credentials: 'same-origin', ...options,
+      headers: { 'Content-Type': 'application/json',
+        ...(csrfToken ? { 'X-NYX-CSRF': csrfToken } : {}), ...(options.headers || {}) },
     });
   } catch {
     throw new Error('No se pudo conectar con el núcleo de NYX.');
   }
   if (!res.ok) {
+    if (res.status === 401 && path !== '/api/auth/login' && path !== '/api/auth/me') {
+      window.dispatchEvent(new Event('nyx-session-expired'));
+    }
     let detail = 'Error HTTP ' + res.status;
     try { detail = (await res.json()).detail || detail; } catch { /* respuesta no JSON */ }
     throw new Error(typeof detail === 'string' ? detail : 'Solicitud no válida');
@@ -80,7 +89,9 @@ function Core({ state }) {
 
 export default function App() {
   const [tab, setTab] = useState('chat');
-  const [status, setStatus] = useState({ online: false, model: 'nyx:0.3' });
+  const [auth, setAuth] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [status, setStatus] = useState({ online: false, model: 'nyx:0.4' });
   const [voiceReady, setVoiceReady] = useState({ tts_ready: false, stt_ready: false });
   const [sessions, setSessions] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -148,7 +159,29 @@ export default function App() {
     if (results.some(r => r.status === 'rejected')) setError('Algunos servicios no respondieron.');
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    let active = true;
+    async function resume() {
+      try {
+        const result = await api('/api/auth/me');
+        if (active) { csrfToken = result.csrf; setAuth(result); }
+      } catch { if (active) { csrfToken = ''; setAuth(null); } }
+      finally { if (active) setAuthReady(true); }
+    }
+    resume();
+    const expired = () => {
+      csrfToken = '';
+      setAuth(null);
+      setSelectedId(null); setSessions([]); setMessages([]);
+      setTasks([]); setMemories([]); setTab('chat');
+    };
+    window.addEventListener('nyx-session-expired', expired);
+    return () => { active = false; window.removeEventListener('nyx-session-expired', expired); };
+  }, []);
+
+  useEffect(() => {
+    if (auth && !auth.must_change) refresh();
+  }, [auth?.id, auth?.must_change, refresh]);
   useEffect(() => {
     if (tab === 'chat') bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages, tab, busy]);
@@ -185,7 +218,7 @@ export default function App() {
     };
     draw();
     return () => cancelAnimationFrame(raf);
-  }, [voiceState, tab, rightOpen]);
+  }, [voiceState, tab, rightOpen, auth?.id]);
 
   useEffect(() => () => {
     voiceJobRef.current.abort?.abort();
@@ -287,7 +320,7 @@ export default function App() {
           const response = await fetch('/api/voice/speak', {
             method: 'POST',
             signal: controller.signal,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-NYX-CSRF': csrfToken },
             body: JSON.stringify({ text: fragment, mode }),
           });
           if (!response.ok) {
@@ -338,6 +371,52 @@ export default function App() {
   function newSession() {
     stopVoice(); setSelectedId(null); setMessages([]); setDraft('');
     setTab('chat'); setError('');
+  }
+
+  async function loginUser(username, password) {
+    csrfToken = '';
+    const result = await api('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+    csrfToken = result.csrf;
+    setAuth(result);
+    setError('');
+    setTab('chat');
+    setSelectedId(null);
+    setMessages([]); setSessions([]); setTasks([]); setMemories([]);
+  }
+
+  async function updateAuth() {
+    const result = await api('/api/auth/me');
+    csrfToken = result.csrf;
+    setAuth(result);
+  }
+
+  async function changeOwnPassword(current_password, new_password) {
+    await api('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password, new_password }),
+    });
+    csrfToken = '';
+    setAuth(null);
+    setSelectedId(null); setSessions([]); setMessages([]);
+    setTasks([]); setMemories([]);
+    setTab('chat');
+  }
+
+  async function logoutUser() {
+    try {
+      await api('/api/auth/logout', { method: 'POST' });
+    } catch { /* invalidar igualmente el estado visible */ }
+    stopVoice();
+    csrfToken = '';
+    setAuth(null);
+    setSelectedId(null); setMessages([]); setSessions([]);
+    setTasks([]); setMemories([]);
+    setProfile({ timezone:'America/Costa_Rica', city:'', country:'', tone:'natural' });
+    setTab('chat');
+    setError('');
   }
 
   async function send(event) {
@@ -398,6 +477,10 @@ export default function App() {
 
   async function saveProfile(event) {
     event.preventDefault();
+    if (!auth?.elevated) {
+      setError('Autoriza primero los cambios desde el panel de seguridad.');
+      return;
+    }
     setSavedProfile(false);
     try {
       const result = await api('/api/profile', {
@@ -487,7 +570,7 @@ export default function App() {
           source.start();
           const resampled = await offline.startRendering();
           const res = await fetch('/api/voice/transcribe', {
-            method: 'POST', headers: { 'Content-Type': 'audio/wav' },
+            method: 'POST', headers: { 'Content-Type': 'audio/wav', 'X-NYX-CSRF': csrfToken },
             body: pcmWav(resampled.getChannelData(0)),
           });
           if (!res.ok) {
@@ -534,6 +617,17 @@ export default function App() {
     return acc;
   }, {});
 
+  if (!authReady) {
+    return <div className="nyx-auth-page"><p>INICIALIZANDO NYX SECURITY...</p></div>;
+  }
+  if (!auth) {
+    return <AuthPortal onLogin={loginUser}/>;
+  }
+  if (auth.must_change) {
+    return <AuthPortal mode="change" username={auth.username}
+      onChangePassword={changeOwnPassword}/>;
+  }
+
   return <div className="nyx-app">
     <header className="topbar">
       <div className="brand">
@@ -544,7 +638,7 @@ export default function App() {
       <div className="top-center"><span className="bar-line" /> PERSONAL LOCAL INTELLIGENCE <span className="bar-line" /></div>
       <div className="top-state"><span className={'led ' + (status.online ? 'on' : 'off')} />
         <span>{status.online ? 'NÚCLEO CONECTADO' : 'MODELO DESCONECTADO'}</span>
-        <small>BUILD 0.3 / LOCALHOST</small>
+        <small>BUILD 0.4 / LOCALHOST</small>
       </div>
     </header>
     <div className="shell">
@@ -552,7 +646,7 @@ export default function App() {
         <div className="section-caption">/ NAVIGATION MODULE</div>
         <button className="start-session" type="button" onClick={newSession}><span>＋</span> NUEVA CONVERSACIÓN</button>
         <nav aria-label="Navegación principal">
-          {MENU.map(item => <button type="button" key={item.id}
+          {MENU.filter(item => item.id !== 'settings' || auth.role === 'admin').map(item => <button type="button" key={item.id}
             className={'nav-item ' + (tab === item.id ? 'active' : '')}
             onClick={() => { setTab(item.id); setItemDraft(''); setError(''); }}>
             <span className="nav-icon">{item.icon}</span><span>{item.label}</span>
@@ -572,7 +666,9 @@ export default function App() {
           <div><div className="eyebrow">NYX / {tab.toUpperCase()} / SYSTEM INTERFACE</div>
             <h1>{MENU.find(n => n.id === tab)?.label}</h1></div>
           <div className="head-actions">
-            <span className="build-tag">◈ V0.3 · COGNITIVE</span>
+            <span className="build-tag">◈ V0.4 · SENTINEL</span>
+            <span className="nyx-login-identity">{auth.username} · {auth.role === 'admin' ? 'ADMIN' : 'USUARIO'}</span>
+            <button className="nyx-logout" title="Cerrar sesión" onClick={logoutUser}>⏻ SALIR</button>
             <button className="small-icon" title="Mostrar u ocultar panel de estado" onClick={() => setRightOpen(!rightOpen)}>▣</button>
           </div>
         </div>
@@ -720,7 +816,7 @@ export default function App() {
           </div>
         </div>}
 
-        {tab === 'settings' && <div className="settings-layout">
+        {tab === 'settings' && auth.role === 'admin' && <div className="settings-layout">
           <div className="settings-card"><div className="eyebrow">/ AUDIO ENGINE</div>
             <h2>Identidad vocal</h2>
             <p>Voz local masculina española con Piper. El modo híbrido aplica resonancia electrónica únicamente a alertas.</p>
@@ -748,6 +844,7 @@ export default function App() {
             <h2>Perfil local</h2>
             <p>Configura únicamente tu ciudad habitual y zona horaria. NYX no utiliza geolocalización actual y no necesita Google para conocer la fecha.</p>
             <form className="profile-form" onSubmit={saveProfile}>
+              {!auth.elevated && <p className="muted">Para modificar el perfil, habilita temporalmente el permiso administrativo en Seguridad.</p>}
               <label>Zona horaria IANA
                 <input value={profile.timezone} maxLength="70" required
                   onChange={e => { setSavedProfile(false); setProfile({...profile, timezone:e.target.value}); }}
@@ -771,7 +868,7 @@ export default function App() {
                   <option value="academico">Académico y didáctico</option>
                 </select>
               </label>
-              <button type="submit" className="outline-button">◆ GUARDAR PERFIL</button>
+              <button type="submit" className="outline-button" disabled={!auth.elevated}>◆ GUARDAR PERFIL</button>
               {savedProfile && <p className="save-confirm" role="status">Perfil actualizado localmente.</p>}
             </form>
             <p className="muted">La ubicación física actual no se consulta ni se deduce de estos campos.</p>
@@ -787,9 +884,10 @@ export default function App() {
             <div className="detail-row"><span>Zona horaria</span><b>{clockInfo?.timezone || profile.timezone}</b></div>
             <p className="muted">Micrófono desactivado por defecto. La captura se inicia únicamente al pulsar el botón correspondiente.</p>
           </div>
+          <AdminPanel auth={auth} api={api} onElevated={updateAuth}/>
         </div>}
 
-        <footer className="footer">NYX 0.3 <span>◆</span> LOCAL INTELLIGENCE <span>◆</span> CRIMSON SYSTEM</footer>
+        <footer className="footer">NYX 0.4 <span>◆</span> LOCAL INTELLIGENCE <span>◆</span> CRIMSON SYSTEM</footer>
       </main>
       {rightOpen && <aside className="inspector">
         <div className="section-caption">/ NYX CORE</div>

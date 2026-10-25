@@ -5,3 +5,4 @@ piper-tts>=1.3,<2
 vosk>=0.3.45,<1
 sympy>=1.13,<2
 tzdata>=2026.1
+argon2-cffi>=23.1,<26

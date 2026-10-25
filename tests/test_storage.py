@@ -1,95 +1,86 @@
-"""Pruebas de migracion no destructiva y sesiones (sin Docker)."""
+"""Pruebas de migración 0.1/0.3, propiedad y aislamiento SQLite."""
 import os
-import sqlite3
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from app import storage
+from app import security, storage
 
 
 class StorageTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.previous = os.environ.get("NYX_DB_PATH")
+        self.old = os.environ.get("NYX_DB_PATH")
         os.environ["NYX_DB_PATH"] = str(Path(self.tmp.name) / "nyx.db")
-        storage.init_db()
+        security.init_auth_db()
+        security.bootstrap_admin("admin_example", "temporary77")
+        with storage.connect() as db:
+            self.admin = db.execute("SELECT id FROM users WHERE role='admin'").fetchone()[0]
+        self.standard = security.create_standard("user_example", "TestPassword123")["id"]
 
     def tearDown(self):
-        if self.previous is None:
+        if self.old is None:
             os.environ.pop("NYX_DB_PATH", None)
         else:
-            os.environ["NYX_DB_PATH"] = self.previous
+            os.environ["NYX_DB_PATH"] = self.old
         self.tmp.cleanup()
 
-    def test_sessions_are_separate(self):
-        a = storage.create_session("Python")
-        b = storage.create_session("Electronica")
-        storage.add_message("user", "Hola Python", a["id"])
-        storage.add_message("user", "Hola electronica", b["id"])
-        self.assertEqual(len(storage.list_messages(a["id"])), 1)
-        self.assertEqual(storage.list_messages(a["id"])[0]["content"], "Hola Python")
-        self.assertEqual(storage.list_sessions("Python")[0]["id"], a["id"])
+    def test_sessions_separate_and_safe(self):
+        a = storage.create_session("Python", self.admin)
+        b = storage.create_session("Electrónica", self.standard)
+        storage.add_message("user", "Una matriz", a["id"], self.admin)
+        storage.add_message("user", "Un circuito", b["id"], self.standard)
+        self.assertEqual(storage.list_messages(a["id"], 200, self.standard), [])
+        self.assertIsNone(storage.get_session(a["id"], self.standard))
+        self.assertEqual(storage.list_sessions("matriz", self.admin)[0]["id"], a["id"])
+        self.assertEqual(storage.list_sessions("", self.standard)[0]["id"], b["id"])
+        self.assertFalse(storage.delete_session(a["id"], self.standard))
+        self.assertIsNone(storage.rename_session(a["id"], "Intento", self.standard))
+        with self.assertRaises(ValueError):
+            storage.add_message("assistant", "intrusión", a["id"], self.standard)
 
-    def test_session_rename_delete(self):
-        session = storage.create_session("Viejo")
-        storage.rename_session(session["id"], "Nuevo")
-        self.assertEqual(storage.get_session(session["id"])["title"], "Nuevo")
-        storage.add_message("user", "No conservar", session["id"])
-        self.assertTrue(storage.delete_session(session["id"]))
-        self.assertEqual(storage.list_messages(session["id"]), [])
+    def test_tasks_memories_are_owned(self):
+        task = storage.add_task("Estudiar", self.admin, "2026-11-05")
+        note = storage.add_memory("Dato privado", self.admin)
+        self.assertEqual(storage.list_tasks(self.standard), [])
+        self.assertEqual(storage.list_memories(100, self.standard), [])
+        self.assertIsNone(storage.update_task(task["id"], True, self.standard))
+        self.assertFalse(storage.delete_task(task["id"], self.standard))
+        self.assertFalse(storage.delete_memory(note["id"], self.standard))
+        self.assertEqual(storage.list_tasks(self.admin)[0]["due_date"], "2026-11-05")
+        self.assertEqual(storage.list_memories(100, self.admin)[0]["content"], "Dato privado")
+        self.assertTrue(storage.update_task(task["id"], True, self.admin)["completed"])
 
-    def test_memory_tasks(self):
-        task = storage.add_task("Estudiar")
-        self.assertTrue(storage.update_task(task["id"], True)["completed"])
-        self.assertTrue(storage.delete_task(task["id"]))
-        note = storage.add_memory("Aprender FastAPI")
-        self.assertEqual(storage.list_memories()[0]["id"], note["id"])
-        self.assertTrue(storage.delete_memory(note["id"]))
+    def test_profiles_have_own_city(self):
+        storage.update_profile(user_id=self.admin, timezone="America/Costa_Rica",
+                               city="Ciudad A", country="CR", tone="natural")
+        self.assertEqual(storage.get_profile(self.admin)["city"], "Ciudad A")
+        self.assertEqual(storage.get_profile(self.standard)["city"], "")
+        with self.assertRaises(ValueError):
+            storage.update_profile(user_id=self.standard, timezone="Invalid/TimeZone",
+                                   city="", country="", tone="natural")
 
-    def test_sql_queries_parameterized(self):
-        task = storage.add_task("'); DROP TABLE sessions; --")
-        self.assertEqual(storage.list_tasks()[0]["id"], task["id"])
-        self.assertTrue(storage.create_session("Sigue funcionando")["id"])
-
-    def test_add_due_date_preserves_legacy_tasks(self):
-        dbfile = storage.db_path()
+    def test_legacy_rows_adopted_once(self):
         with storage.connect() as db:
-            db.execute("ALTER TABLE tasks RENAME TO tasks_saved")
-            db.execute("""CREATE TABLE tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                completed INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )""")
-            db.execute("INSERT INTO tasks(title) VALUES ('Tarea de 0.2')")
-            db.execute("DROP TABLE tasks_saved")
+            db.execute("INSERT INTO sessions(title,owner_id) VALUES ('Legado',NULL)")
+            db.execute("INSERT INTO tasks(title,owner_id) VALUES ('Tarea antigua',NULL)")
+            db.execute("INSERT INTO memories(content,owner_id) VALUES ('Nota antigua',NULL)")
         storage.init_db()
+        storage.adopt_legacy_records(self.admin)
         storage.init_db()
-        self.assertEqual(storage.list_tasks()[0]["title"], "Tarea de 0.2")
-        self.assertIsNone(storage.list_tasks()[0]["due_date"])
+        storage.adopt_legacy_records(self.admin)
+        self.assertTrue(any(s["title"] == "Legado" for s in storage.list_sessions("", self.admin)))
+        self.assertTrue(any(t["title"] == "Tarea antigua" for t in storage.list_tasks(self.admin)))
+        self.assertTrue(any(m["content"] == "Nota antigua" for m in storage.list_memories(100, self.admin)))
+        self.assertFalse(any(s["title"] == "Legado" for s in storage.list_sessions("", self.standard)))
 
-    def test_migrate_legacy_history_twice(self):
-        # Simula la estructura exacta de messages en 0.1.
-        dbfile = storage.db_path()
-        with storage.connect() as db:
-            db.execute("DROP TABLE messages")
-            db.execute("""CREATE TABLE messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                role TEXT NOT NULL CHECK(role IN ('user','assistant')),
-                content TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )""")
-            db.execute("INSERT INTO messages(role,content) VALUES ('user','Mi chat anterior')")
-            db.execute("INSERT INTO messages(role,content) VALUES ('assistant','Respuesta antigua')")
-        storage.init_db()
-        storage.init_db()
-        legacy = storage.list_sessions("Conversaciones anteriores")
-        self.assertEqual(len(legacy), 1)
-        self.assertEqual(len(storage.list_messages(legacy[0]["id"])), 2)
-        self.assertEqual(storage.list_messages(legacy[0]["id"])[0]["content"], "Mi chat anterior")
+    def test_sql_injection_cannot_escape_owner(self):
+        task = storage.add_task("'); DROP TABLE users; --", self.admin)
+        self.assertEqual(storage.list_tasks(self.admin)[0]["id"], task["id"])
+        self.assertEqual(storage.list_tasks(self.standard), [])
+        self.assertEqual(security.account_count(), 2)
 
 
 if __name__ == "__main__":

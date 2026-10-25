@@ -1,131 +1,132 @@
-# NYX 0.3 — Cognitive Core + Crimson Intelligence System
+# NYX 0.4 — Identity & Security
 
-Versión 0.3 sobre la MISMA rama feature/nyx-0.2-crimson. Conserva el diseño de 0.2 y añade herramientas locales. 
+## Lo que ofrece
 
-Asistente local para Windows 11 (Ryzen 5 4600G, 16 GB RAM), diseñado para crecer hacia otros equipos y servidores. La rama 0.2 conserva los archivos originales y la arquitectura Docker 0.1.
+- Inicio de sesión Crimson para administrador y cuentas estándar.
+- Contraseñas almacenadas exclusivamente como hashes Argon2id con sal única.
+- Sesiones opacas aleatorias mediante cookies HttpOnly, SameSite=Strict, vencimiento de 8 horas.
+- Token anti-CSRF vinculado a sesión para escrituras, bloqueo de orígenes ajenos.
+- Aislamiento por propietario de sesiones, notas, tareas y contexto. Incluso la API directa valida propiedad.
+- Configuración global administrativa protegida mediante autorización temporal de 5 minutos.
+- Security Sentinel: detección de solicitudes sobre secretos del propietario, accesos a recursos administrativos no autorizados e intentos de acceso fallidos; revisión manual de falsos positivos.
+- Correo por SMTP TLS/SSL cuando las reglas disparan una alerta. Incluye el nombre de cuenta, el mensaje que activó la regla (se ocultan credenciales detectables), explicación, fecha y número del evento.
+- Cola local de alertas que reintenta envío cuando vuelve la conexión; no requiere SMTP para conversar.
+- Migración 0.3 -> 0.4 que conserva chats, tareas, notas y perfil y los asigna al primer administrador.
+- Se conservan el diseño Crimson, voz Piper/Vosk, lectura por fragmentos, motor SymPy, herramientas y contexto temporal.
 
-## Cognitive Core 0.3
+**No incluye** conexión general a Internet, entrenamiento autónomo de modelos, notificaciones externas sin configurar, reconocimiento facial ni servidor multiusuario público.
+No expongas 127.0.0.1:3000 a Internet ni a tu red sin un proxy seguro y autenticación adicional.
 
-- Herramientas internas a través de Ollama /api/chat: consultar tareas, notas, sesiones y perfil; crear tareas/notas solo con petición expresa; completar tareas por ID; cálculos matriciales numéricos con SymPy.
-- Fecha y hora verificables sin Internet, usando zona horaria IANA del perfil local (inicialmente America/Costa_Rica).
-- Perfil local editable desde Configuración: ciudad y país habitual opcionales, zona horaria y tono conversacional. Nunca se supone que la ciudad habitual sea la ubicación física actual.
-- Tareas pueden tener fecha YYYY-MM-DD, incluso desde chat. No son alertas ni recordatorios programados.
-- Personalidad más natural, menos respuestas repetitivas y más precisión académica; modelo base sigue siendo Qwen2.5 3B y tiene limitaciones.
-- Restricciones de seguridad: lista cerrada de herramientas, argumentos validados, máximo cuatro ejecuciones por turno; no se borran sesiones ni memorias mediante el chat.
-- Respuesta local determinista para consultas simples de fecha, hora y ciudad habitual; el resto utiliza llamadas de herramientas según capacidad del modelo.
+## Importante antes de actualizar
 
-La herramienta matemática admite determinante, rango, transpuesta, inversa, multiplicación, Ax=b, producto escalar y cruz sobre matrices numéricas pequeñas; NO acepta eval arbitrario ni Python enviado por el modelo.
+**La versión 0.4 requiere un administrador configurado por consola local antes de poder acceder a la interfaz.** No existe usuario/contraseña por defecto en el código ni en GitHub.
 
-**Ejemplos de pruebas:**
+1. Haz copia desde tu carpeta del repositorio existente:
 
-    ¿Qué día es hoy y qué hora es?
-    ¿De dónde soy? (primero configura tu ciudad habitual)
-    Muéstrame mis tareas pendientes.
-    Crea una tarea para estudiar vectores el 2026-11-05.
-    Recuerda que prefiero explicaciones paso a paso.
-    Busca en mi bitácora la palabra matrices.
-    Comprueba el determinante de [[2,1],[1,-3]].
+       .\scripts\backup.ps1
 
-**Importante:** el éxito de las llamadas de herramientas depende también de Qwen2.5 3B. Un modelo de 3B puede equivocarse al seleccionar una función o pasar argumentos; usa los módulos para verificar cambios. No hay conectividad web, geolocalización, monitorización del sistema ni alarmas automáticas.
+   Confirma que los .tar.gz estén completos y guárdalos en un lugar protegido.
 
-## Funciones implementadas
-- **Interfaz Crimson 2.0:** paneles de terminal negra y carmesí, núcleo animado que refleja el estado real del asistente, contexto lateral, adaptación a móvil y modo reducido de animaciones.
-- **Bitácora por sesiones:** nueva conversación, selección, búsqueda, cambio de título, eliminación y exportación TXT. Los mensajes previos de 0.1 se migran sin borrarlos.
-- **Modelo local:** Qwen2.5 3B con identidad personalizada nyx:0.2. La información del creador no aparece en interfaz ni saludos; solo se responde cuando se pregunta explícitamente.
-- **Memoria explícita y tareas:** SQLite persistente con volumen Docker independiente.
-- **Lectura completa:** respuestas largas se sintetizan en segmentos (máximo 850 caracteres por solicitud), se reproducen en orden, incluyen indicador `LECTURA x/y` y admiten interrupción inmediata. Se precarga el siguiente segmento mientras se reproduce el actual.
-- **Voz LOCAL optativa:** Piper, voz masculina española davefx-medium (modelo CC0), con modo natural y procesamiento de alertas mediante Web Audio. La onda se alimenta de la señal real reproducida o capturada.
-- **Micrófono local optativo:** Vosk modelo pequeño en español; se activa manualmente, transcribe localmente y pone el texto reconocido en el editor para revisión (no lo envía automáticamente).
-- **Respaldo:** volúmenes de modelos, memoria y voz; se preservan fuera de GitHub.
+2. Desde la misma rama que ya utilizas para NYX 0.2/0.3:
 
-No incluye clonación de voz ni imitación exacta de ningún actor. No se ha entrenado desde cero el modelo Qwen: Modelfile define instrucciones, no pesos nuevos.
+       git fetch origin
+       git switch feature/nyx-0.2-crimson
+       git pull --ff-only origin feature/nyx-0.2-crimson
+       docker compose up -d --build
 
-## Requisitos
-- Windows 11, Docker Desktop + WSL 2. También Linux con Compose.
-- RAM de Docker suficiente; se probará en CPU. Los modelos de voz se cargan bajo demanda.
-- Acceso a Internet durante la descarga inicial de imágenes y modelos.
+3. Crea el administrador desde la consola de PowerShell:
 
-## Actualizar desde NYX 0.2 a NYX 0.3 SIN PERDER EL HISTORIAL
+       docker compose exec api python -m app.setup_admin
 
-**Haz una copia primero:**
+   La consola preguntará por el nombre de usuario y la contraseña provisional
+   **sin mostrarla en pantalla**. Introduce allí el usuario que elegiste y
+   la contraseña inicial que decidiste usar; esta clave temporal NO se guarda
+   en GitHub. Tu cuenta exigirá sustituirla por otra de 12+ caracteres
+   después del primer acceso.
 
-    .\scripts\backup.ps1
+   El CLI solo se puede ejecutar una vez. Durante la inicialización se asignan
+   los datos históricos al administrador; ningún usuario estándar recibe esos
+   datos. El comando no borra conversaciones ni memorias.
 
-El respaldo detiene momentáneamente los servicios. Conviene copiar la carpeta backups/ a almacenamiento externo protegido. NO publiques respaldos, voces ni bases de datos en GitHub.
+4. Recrea la identidad local (reutiliza la base Qwen2.5 3B):
 
-Para cambiar de rama desde la copia local del repositorio:
+       docker compose exec ollama ollama create nyx:0.4 -f /config/Modelfile
 
-    git fetch origin
-    git switch feature/nyx-0.2-crimson
+5. Abre http://localhost:3000, inicia sesión, cambia la clave provisional
+   y vuelve a autenticarte. En Configuración > Identidad y seguridad, introduce
+   tu contraseña definitiva para autorizar cambios por cinco minutos.
 
-Comprueba los cambios y arranca:
+6. Crea desde esa misma pantalla un usuario estándar con contraseña provisional
+   robusta (12+ caracteres). Al iniciar sesión deberá cambiarla. Cada cuenta
+   mantiene su propio historial, notas, tareas y contexto.
 
-    docker compose up -d --build
-    docker compose exec ollama ollama create nyx:0.3 -f /config/Modelfile
-    docker compose ps
+No uses docker compose down -v: eliminaría los volúmenes persistentes.
 
-Abre **http://localhost:3000**.
+## Alertas por correo electrónico
 
-El nuevo modelo de identidad nyx:0.3 reutiliza los pesos base qwen2.5:3b ya instalado en el volumen nyx_models se reutiliza; si no está presente:
+El destino de alertas es PRIVADO y NO está incluido en este repositorio.
+Para configurarlo:
 
-    docker compose exec ollama ollama pull qwen2.5:3b
-    docker compose exec ollama ollama create nyx:0.2 -f /config/Modelfile
+    Copy-Item config\smtp.example.env .env.security
 
-**Nota:** la migración SQL se ejecuta al iniciar el API y agrupa los mensajes antiguos en "Conversaciones anteriores (0.1)" de forma que los registros se conserven.
+Edita SOLO tu archivo local .env.security y añade servidor, puerto, usuario,
+contraseña de aplicación SMTP, remitente y destinatario del administrador.
+Para SMTP/STARTTLS usa 587 y NYX_SMTP_SECURITY=starttls.
+Para SMTP/SSL directo usa normalmente 465 y NYX_SMTP_SECURITY=ssl.
+Los campos de ejemplo vacíos desactivan los envíos.
 
-## Activar voz natural, alertas robotizadas y micrófono
+Después recrea la API para cargar los nuevos valores:
 
-Instala las voces de forma expresa, una sola vez:
+    docker compose up -d --force-recreate api
 
-    docker compose exec api python -m app.voice_setup
+En Configuración > Security Sentinel verás si el correo está configurado,
+el destino parcialmente oculto y cuántas alertas están en cola.
+Autoriza temporalmente los cambios para enviar un correo de prueba.
 
-O individualmente:
+El archivo .env.security está ignorado por Git, pero las variables de entorno
+son visibles para administradores de Docker en el host. Trata también los
+respaldos de la base de datos como información privada.
 
-    docker compose exec api python -m app.voice_setup --tts
-    docker compose exec api python -m app.voice_setup --stt
+### Política de Sentinel
 
-- TTS: Piper es_ES-davefx-medium (aprox. 63 MB, voz masculina de España).
-- STT: Vosk vosk-model-small-es-0.42 (aprox. 39 MB comprimido).
-- No se envía el audio a servicios externos; solo se usa Internet para descargar modelos.
-- Los archivos descargados se guardan en nyx_voice.
-- Tras instalar, pulsa **SINCRONIZAR** en la interfaz para actualizar el estado. En Configuración puedes probar la voz y una alerta.
+- Consulta explícita sobre datos sensibles del propietario desde cuenta estándar:
+  evento de prioridad alta y correo en cola.
+- Tres intentos de acceso a una función administrativa en diez minutos:
+  se genera un correo. Los intentos individuales quedan en el registro.
+- Cinco fallos de autenticación en quince minutos:
+  bloqueo temporal, registro de prioridad alta y correo.
+- Revisión: administrador puede clasificar como falso positivo o confirmado.
+- Las alertas contienen solo la consulta que activó el evento,
+  truncada a 1200 caracteres con redacción de credenciales detectables.
+- No se recopilan sistemáticamente conversaciones normales de usuarios.
+- El envío es best effort con reintentos cada 90 segundos; el registro
+  en SQLite permanece aunque SMTP esté desconectado.
 
-**Flujo:** botón de micrófono → captura con permiso del navegador → audio WAV local → Vosk → texto editable → envío explícito → Ollama → texto → Piper → reproducción → onda real.
+### Limitaciones de seguridad
 
-**Importante:** Piper y Vosk son software de terceros con licencias independientes. Piper-tts se distribuye bajo GPL-3.0 o posterior; el dataset de la voz davefx figura como CC0. Considera las obligaciones de licencia antes de redistribuir el programa.
+- La detección por patrones no identifica todas las amenazas ni todas las
+  credenciales. Algunas consultas inocentes pueden producir falsos positivos.
+- Para cambiar los privilegios de configuración se requiere reintroducir la
+  contraseña administrativa. El permiso expira en cinco minutos.
+- Las tablas SQLite no están cifradas a nivel de aplicación. Protege el disco,
+  Docker Desktop y las copias con cifrado del sistema de archivos.
+- El repositorio público de versiones anteriores contenía reglas de identidad
+  del prototipo. Si se exige anonimato total del creador, habría que valorar
+  privatizar el repositorio y revisar su historial; el código 0.4 por sí solo
+  no puede volver privados los commits anteriores.
+- La cuenta administrador NO puede leer automáticamente conversaciones de
+  usuarios estándar. La separación se aplica por propietario.
+- El correo no constituye una denuncia ni prueba de delito: toda alerta
+  exige una revisión humana.
 
-## Privacidad y seguridad
-
-- Solo expuesto en localhost:3000. NO publicar el servicio a Internet sin autenticación.
-- El micrófono requiere autorización del navegador y está desactivado por defecto.
-- No existe escucha permanente ni automatización de comandos del sistema.
-- Los datos privados están en volúmenes Docker, ignorados por Git.
-- El contenido de los recuerdos no debe incluir contraseñas ni credenciales.
-- Para conservar los datos, NO ejecutes docker compose down -v.
-- Los archivos históricos originales permanecen intactos.
-- NYX 0.3 añade de forma no destructiva la tabla local_profile y la columna tasks.due_date.
-- La identidad del creador no aparece en la UI ni en las respuestas, salvo pregunta directa.
-
-## Cómo comprobar los nuevos módulos
-
-En Configuración > Perfil local, define tu zona horaria (America/Costa_Rica por defecto) y opcionalmente ciudad y país. Puedes dejar ciudad/país vacíos. La información NO se publica en GitHub.
-
-Para comprobar que las herramientas se han conectado:
-
-    docker compose exec ollama ollama list
-    docker compose logs --tail=100 api
-
-Para ver el estado del servidor visita http://localhost:3000/api/status.
-
-## Verificación
-
-En Windows 11:
+## Comprobar la instalación
 
     docker compose ps
     docker compose logs --tail=80 api
 
-Pruebas Python (desde la raíz, con FastAPI, httpx, sympy y tzdata disponibles):
+Pruebas en entorno Python con FastAPI, httpx, SymPy y argon2-cffi:
 
     python -m unittest discover -s tests -v
 
-La compilación completa y la calidad/performance de las voces deben validarse en el Ryzen 5 real antes de fusionar a main. Consulta docs/ARQUITECTURA.md.
+Las pruebas automatizadas no sustituyen validación real del correo ni de
+inicio de sesión en Windows/WSL. No fusiones a main antes de probar.
