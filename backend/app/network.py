@@ -18,7 +18,7 @@ GEO_URL = "https://geocoding-api.open-meteo.com/v1/search"
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 WIKI_URL = "https://es.wikipedia.org/w/api.php"
 TIMEOUT = httpx.Timeout(8.0, connect=4.0)
-AGENT = "NYX-Local/0.4 (weather and public encyclopedia requests; user initiated)"
+AGENT = "NYX/0.5 (+https://github.com/jeffersonAG/Nyx; public data requests on user command)"
 
 CONDITIONS = {
     0: "cielo despejado", 1: "mayormente despejado", 2: "parcialmente nublado",
@@ -65,10 +65,10 @@ async def connectivity_status(user_id: int) -> dict[str, Any]:
 
 def extract_weather_location(text: str, user_id: int) -> str | None:
     normalized = normalize(text)
-    if not re.search(r"\b(clima|temperatura|tiempo meteorologico|pronostico|tiempo hace|que tiempo|va a llover|lloviendo)\b", normalized):
+    if not re.search(r"\b(clima|temperatura|tiempo meteorologico|pronostico|tiempo hace|tiempo en|como esta el tiempo|que tiempo|va a llover|llovera|llueve|lloviendo)\b", normalized):
         return None
     # No captar interrogaciones ambiguas como "qué es el clima tropical".
-    intent = re.search(r"\b(actual|ahora|hoy|pronostico|que tiempo|cual es el clima|dime el clima|clima en|clima de|temperatura en|temperatura de|tiempo hace|llover|lloviendo)\b", normalized)
+    intent = re.search(r"\b(actual|ahora|hoy|pronostico|que tiempo|como esta el tiempo|tiempo en|cual es el clima|dime el clima|clima en|clima de|temperatura en|temperatura de|tiempo hace|llover|llovera|llueve|lloviendo)\b", normalized)
     if not intent:
         return None
     match = re.search(r"\b(?:en|de|para)\s+([a-záéíóúüñA-ZÁÉÍÓÚÜÑ][\w\sáéíóúüñÁÉÍÓÚÜÑ,-]{1,80})",
