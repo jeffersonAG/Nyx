@@ -220,7 +220,7 @@ export default function App() {
       csrfToken = '';
       setAuth(null);
       setSelectedId(null); setSessions([]); setMessages([]);
-      setTasks([]); setMemories([]); setKnowledge([]); setTab('chat');
+      setTasks([]); setMemories([]); setKnowledge([]); setDueAlerts([]); setTab('chat');
     };
     window.addEventListener('nyx-session-expired', expired);
     return () => { active = false; window.removeEventListener('nyx-session-expired', expired); };
@@ -443,7 +443,7 @@ export default function App() {
     setError('');
     setTab('chat');
     setSelectedId(null);
-    setMessages([]); setSessions([]); setTasks([]); setMemories([]);
+    setMessages([]); setSessions([]); setTasks([]); setMemories([]); setKnowledge([]); setDueAlerts([]);
   }
 
   async function updateAuth() {
@@ -460,7 +460,7 @@ export default function App() {
     csrfToken = '';
     setAuth(null);
     setSelectedId(null); setSessions([]); setMessages([]);
-    setTasks([]); setMemories([]);
+    setTasks([]); setMemories([]); setKnowledge([]); setDueAlerts([]);
     setTab('chat');
   }
 
@@ -472,7 +472,7 @@ export default function App() {
     csrfToken = '';
     setAuth(null);
     setSelectedId(null); setMessages([]); setSessions([]);
-    setTasks([]); setMemories([]);
+    setTasks([]); setMemories([]); setKnowledge([]); setDueAlerts([]);
     setProfile({ timezone:'America/Costa_Rica', city:'', country:'', tone:'natural' });
     setTab('chat');
     setError('');
