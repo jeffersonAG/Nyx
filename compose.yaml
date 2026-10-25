@@ -40,8 +40,10 @@ services:
       context: ./native
     restart: unless-stopped
     environment:
-      NYX_NATIVE_CHECKPOINT: /models/native.pt
       OMP_NUM_THREADS: "4"
+    env_file:
+      - path: .env.native
+        required: false
     volumes:
       - nyx_native_weights:/models
       - nyx_native_corpus:/corpus
