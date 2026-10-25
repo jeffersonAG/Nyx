@@ -9,7 +9,7 @@ const categoryNames = {
 export default function AdminPanel({ auth, api, onElevated }) {
   const [events, setEvents] = useState([]);
   const [users, setUsers] = useState([]);
-  const [mail, setMail] = useState({ configured:false, queued:0, recipient_masked:'' });
+  const [mail, setMail] = useState({ configured:false, provider:'smtp', queued:0, recipient_masked:'' });
   const [password, setPassword] = useState('');
   const [newUser, setNewUser] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -73,7 +73,7 @@ export default function AdminPanel({ auth, api, onElevated }) {
     setWorking(true); setError(''); setNotice('');
     try {
       await api('/api/security/test-mail', { method:'POST' });
-      setNotice('El servidor SMTP confirmó el envío de la prueba.');
+      setNotice('El proveedor confirmó la aceptación del mensaje de prueba. Comprueba la recepción en tu bandeja.');
     } catch (err) { setError(err.message); }
     finally { setWorking(false); }
   }
@@ -140,10 +140,11 @@ export default function AdminPanel({ auth, api, onElevated }) {
     </div>
     <div className="nyx-security-subheading"><h3>Notificaciones por correo</h3></div>
     <div className="nyx-mail-info">
-      <div>ESTADO: {mail.configured ? 'SMTP CONFIGURADO' : 'SMTP PENDIENTE'}</div>
-      <div>DESTINO: {mail.recipient_masked || 'NO CONFIGURADO'}</div>
+      <div>PROVEEDOR: {mail.provider === 'emailjs' ? 'EMAILJS + GMAIL' : mail.provider === 'smtp' ? 'SMTP' : 'DESCONOCIDO'}</div>
+      <div>ESTADO: {mail.configured ? 'CONFIGURADO' : 'CONFIGURACIÓN INCOMPLETA'}</div>
+      <div>DESTINO: {mail.recipient_masked || (mail.provider === 'emailjs' ? 'FIJADO EN LA PLANTILLA EMAILJS' : 'NO CONFIGURADO')}</div>
       <div>ALERTAS EN COLA: {mail.queued}</div>
-      <p>El correo de destino y las credenciales SMTP se establecen localmente en .env.security. No se introducen contraseñas de correo en la interfaz.</p>
+      <p>Selecciona EmailJS o SMTP en el archivo local .env.security. Nunca introduzcas claves secretas en el navegador ni en GitHub. Si utilizas EmailJS, el destinatario se fija en la plantilla de EmailJS.</p>
       {auth.elevated && <button onClick={testMail} disabled={!mail.configured || working}>✉ ENVIAR CORREO DE PRUEBA</button>}
     </div>
   </section>;

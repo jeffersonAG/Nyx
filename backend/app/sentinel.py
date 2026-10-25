@@ -13,6 +13,8 @@ import ssl
 import time
 from email.message import EmailMessage
 
+import httpx
+
 from . import storage
 
 MAX_EXCERPT = 1200
@@ -142,7 +144,12 @@ def review_event(event_id: int, status: str) -> dict | None:
         raise ValueError("Clasificación no permitida.")
     with storage.connect() as db:
         changed = db.execute(
-            "UPDATE security_events SET status=? WHERE id=?", (status, event_id)
+            """UPDATE security_events
+                SET status=?,
+                    mail_state=CASE WHEN ?='false_positive' AND mail_state='queued'
+                                    THEN 'none' ELSE mail_state END
+                WHERE id=?""",
+            (status, status, event_id)
         )
         if not changed.rowcount:
             return None
@@ -167,7 +174,105 @@ def smtp_config() -> dict:
     return cfg
 
 
+
+# Única URL externa a la que el transporte EmailJS puede enviar datos.
+EMAILJS_SEND_URL = "https://api.emailjs.com/api/v1.0/email/send"
+
+
+def mail_provider() -> str:
+    return os.environ.get("NYX_MAIL_PROVIDER", "smtp").strip().lower()
+
+
+def emailjs_config() -> dict:
+    return {
+        "service_id": os.environ.get("NYX_EMAILJS_SERVICE_ID", "").strip(),
+        "template_id": os.environ.get("NYX_EMAILJS_TEMPLATE_ID", "").strip(),
+        "public_key": os.environ.get("NYX_EMAILJS_PUBLIC_KEY", "").strip(),
+        "private_key": os.environ.get("NYX_EMAILJS_PRIVATE_KEY", "").strip(),
+    }
+
+
+def emailjs_configured() -> bool:
+    cfg = emailjs_config()
+    # Para uso desde el servidor requerimos la clave privada, que nunca
+    # se muestra en la API o en React.
+    return bool(all(cfg.values()))
+
+
+def _send_emailjs(template_params: dict[str, str]) -> None:
+    if not emailjs_configured():
+        raise RuntimeError("EmailJS no está configurado.")
+    cfg = emailjs_config()
+    payload = {
+        "service_id": cfg["service_id"],
+        "template_id": cfg["template_id"],
+        "user_id": cfg["public_key"],
+        "accessToken": cfg["private_key"],
+        "template_params": template_params,
+    }
+    try:
+        with httpx.Client(timeout=httpx.Timeout(18.0, connect=5.0),
+                          follow_redirects=False) as client:
+            response = client.post(
+                EMAILJS_SEND_URL,
+                headers={"Content-Type": "application/json"},
+                json=payload
+            )
+        if response.status_code != 200:
+            # No reflejar el cuerpo del proveedor: podría contener datos
+            # de una solicitud, credenciales u otros detalles sensibles.
+            raise RuntimeError(f"EmailJS rechazó el envío (HTTP {response.status_code}).")
+    except httpx.RequestError as exc:
+        raise RuntimeError("EmailJS no está disponible por red.") from exc
+
+
+def _event_template_params(row) -> dict[str, str]:
+    severity = "ALTO" if row["severity"] == "high" else "MEDIO"
+    category = row["category"]
+    modules = {
+        "sensitive_request": "Privacidad del creador",
+        "restricted_access": "Control de acceso",
+        "login_failures": "Autenticación",
+    }
+    actions = {
+        "sensitive_request": "NYX bloqueó la divulgación de información personal protegida.",
+        "restricted_access": "El backend rechazó la operación por falta de permisos.",
+        "login_failures": "NYX aplicó límites temporales de autenticación.",
+    }
+    return {
+        "incident_id": f"SEC-{row['id']:06d}",
+        "alert_level": severity,
+        "event_date": f"{row['created_at']} UTC",
+        "username": sanitize_message(row["actor_username"]),
+        "module_name": modules.get(category, "Security Sentinel"),
+        "event_status": "PENDIENTE DE REVISIÓN",
+        "user_message": sanitize_message(
+            row["message_excerpt"] or "[Evento técnico sin mensaje de conversación]"
+        ),
+        "security_analysis": sanitize_message(row["reason"]),
+        "action_taken": actions.get(category, "Se registró el evento para revisión."),
+    }
+
+
+def _test_template_params() -> dict[str, str]:
+    return {
+        "incident_id": "TEST-NYX",
+        "alert_level": "PRUEBA — SIN INCIDENTE",
+        "event_date": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
+        "username": "SISTEMA (PRUEBA)",
+        "module_name": "Security Sentinel",
+        "event_status": "PRUEBA DE ENTREGA",
+        "user_message": "Este correo comprueba la plantilla. No ocurrió una consulta sospechosa.",
+        "security_analysis": "Notificación de diagnóstico solicitada por el administrador.",
+        "action_taken": "Ninguna acción de seguridad: correo de prueba.",
+    }
+
+
 def mail_configured() -> bool:
+    if mail_provider() == "emailjs":
+        return emailjs_configured()
+    if mail_provider() != "smtp":
+        return False
     cfg = smtp_config()
     return bool(cfg["host"] and cfg["sender"] and cfg["recipient"]
                 and cfg["security"] in {"starttls", "ssl"}
@@ -186,7 +291,8 @@ def mail_status() -> dict:
         pending = db.execute(
             "SELECT COUNT(*) FROM security_events WHERE mail_state='queued'"
         ).fetchone()[0]
-    return {"configured": mail_configured(), "recipient_masked": destination,
+    return {"configured": mail_configured(), "provider": mail_provider(),
+            "recipient_masked": destination,
             "queued": pending, "requires_network": True}
 
 
@@ -220,6 +326,11 @@ def _send(to: str, subject: str, body: str) -> None:
 
 
 def send_test_mail() -> None:
+    if mail_provider() == "emailjs":
+        _send_emailjs(_test_template_params())
+        return
+    if mail_provider() != "smtp":
+        raise RuntimeError("Proveedor de correo desconocido.")
     cfg = smtp_config()
     _send(cfg["recipient"], "[NYX] Prueba de Security Sentinel",
           "El canal de alertas ha superado la prueba de envío.\n"
@@ -247,18 +358,25 @@ def process_queue(max_items: int = 5) -> int:
     if not mail_configured():
         return 0
     now = int(time.time())
+    provider = mail_provider()
+    # EmailJS limita el envío a 1 petición/segundo. Una alerta por
+    # ciclo de 90s evita ráfagas y reduce el riesgo de agotar la cuota.
+    batch_size = 1 if provider == "emailjs" else max(1, min(10, max_items))
     with storage.connect() as db:
         rows = db.execute("""
             SELECT * FROM security_events
-            WHERE mail_state='queued' AND mail_next_retry <= ?
+            WHERE mail_state='queued' AND status='pending' AND mail_next_retry <= ?
             ORDER BY id ASC LIMIT ?
-        """, (now, max(1, min(10, max_items)))).fetchall()
+        """, (now, batch_size)).fetchall()
     successes = 0
     for row in rows:
         try:
-            cfg = smtp_config()
-            _send(cfg["recipient"], f"[NYX SECURITY] Revisar evento SEC-{row['id']:06d}",
-                  _event_mail_body(row))
+            if provider == "emailjs":
+                _send_emailjs(_event_template_params(row))
+            else:
+                cfg = smtp_config()
+                _send(cfg["recipient"], f"[NYX SECURITY] Revisar evento SEC-{row['id']:06d}",
+                      _event_mail_body(row))
             with storage.connect() as db:
                 db.execute("""UPDATE security_events
                     SET mail_state='sent',sent_at=datetime('now'),mail_last_error=''

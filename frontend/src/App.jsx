@@ -668,7 +668,7 @@ export default function App() {
       <div className="top-center"><span className="bar-line" /> PERSONAL LOCAL INTELLIGENCE <span className="bar-line" /></div>
       <div className="top-state"><span className={'led ' + (status.online ? 'on' : 'off')} />
         <span>{status.online ? 'NÚCLEO CONECTADO' : 'MODELO DESCONECTADO'}</span>
-        <small>BUILD 0.4.1 / LOCALHOST</small>
+        <small>BUILD 0.4.2 / LOCALHOST</small>
       </div>
     </header>
     <div className="shell">
@@ -696,7 +696,7 @@ export default function App() {
           <div><div className="eyebrow">NYX / {tab.toUpperCase()} / SYSTEM INTERFACE</div>
             <h1>{MENU.find(n => n.id === tab)?.label}</h1></div>
           <div className="head-actions">
-            <span className="build-tag">◈ V0.4.1 · SENTINEL</span>
+            <span className="build-tag">◈ V0.4.2 · SENTINEL</span>
             <span className="nyx-login-identity">{auth.username} · {auth.role === 'admin' ? 'ADMIN' : 'USUARIO'}</span>
             <button className="nyx-logout" title="Cerrar sesión" onClick={logoutUser}>⏻ SALIR</button>
             <button className="small-icon" title="Mostrar u ocultar panel de estado" onClick={() => setRightOpen(!rightOpen)}>▣</button>
@@ -934,7 +934,7 @@ export default function App() {
             <AdminPanel auth={auth} api={api} onElevated={updateAuth}/>
           </div>}
 
-        <footer className="footer">NYX 0.4.1 <span>◆</span> LOCAL INTELLIGENCE <span>◆</span> CRIMSON SYSTEM</footer>
+        <footer className="footer">NYX 0.4.2 <span>◆</span> LOCAL INTELLIGENCE <span>◆</span> CRIMSON SYSTEM</footer>
       </main>
       {rightOpen && <aside className="inspector">
         <div className="section-caption">/ NYX CORE</div>

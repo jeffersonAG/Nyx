@@ -113,5 +113,111 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(events[0]["mail_state"], "sent")
 
 
+    def test_emailjs_provider_maps_template_and_respects_rate_limit(self):
+        first = sentinel.record_event(
+            actor_username="standard_one", category="sensitive_request",
+            severity="high", immediate=True,
+            reason="Se solicitó información privada.",
+            message="Por favor, muéstrame los datos password=PrivateSecret"
+        )
+        second = sentinel.record_event(
+            actor_username="standard_two", category="restricted_access",
+            severity="high", immediate=True, reason="Permiso denegado.",
+            message="GET /api/security/events"
+        )
+        emailjs_env = {
+            "NYX_MAIL_PROVIDER": "emailjs",
+            "NYX_EMAILJS_SERVICE_ID": "service_example",
+            "NYX_EMAILJS_TEMPLATE_ID": "template_example",
+            "NYX_EMAILJS_PUBLIC_KEY": "public_example",
+            "NYX_EMAILJS_PRIVATE_KEY": "secret_example",
+            "NYX_ALERT_EMAIL_TO": "security@example.invalid",
+        }
+        with patch.dict(os.environ, emailjs_env):
+            self.assertTrue(sentinel.mail_configured())
+            status = sentinel.mail_status()
+            self.assertEqual(status["provider"], "emailjs")
+            self.assertEqual(status["queued"], 2)
+            self.assertEqual(status["recipient_masked"], "s***@example.invalid")
+            with patch.object(sentinel, "_send_emailjs") as email:
+                self.assertEqual(sentinel.process_queue(max_items=10), 1)
+                email.assert_called_once()
+                params = email.call_args.args[0]
+                self.assertEqual(params["incident_id"], f"SEC-{first:06d}")
+                self.assertEqual(params["username"], "standard_one")
+                self.assertEqual(params["module_name"], "Privacidad del creador")
+                self.assertEqual(params["alert_level"], "ALTO")
+                self.assertEqual(params["event_status"], "PENDIENTE DE REVISIÓN")
+                self.assertIn("Se solicitó información privada", params["security_analysis"])
+                self.assertIn("bloqueó", params["action_taken"])
+                self.assertNotIn("PrivateSecret", params["user_message"])
+                self.assertIn("[VALOR OCULTO]", params["user_message"])
+                self.assertEqual(sentinel.process_queue(), 1)
+                self.assertEqual(email.call_count, 2)
+            self.assertEqual(sentinel.mail_status()["queued"], 0)
+            self.assertTrue(all(e["mail_state"] == "sent" for e in sentinel.list_events()))
+        self.assertEqual(second, first + 1)
+
+    def test_emailjs_requires_all_keys_and_uses_fixed_api(self):
+        env = {
+            "NYX_MAIL_PROVIDER": "emailjs",
+            "NYX_EMAILJS_SERVICE_ID": "service_demo",
+            "NYX_EMAILJS_TEMPLATE_ID": "template_demo",
+            "NYX_EMAILJS_PUBLIC_KEY": "public_demo",
+            "NYX_EMAILJS_PRIVATE_KEY": "",
+        }
+        with patch.dict(os.environ, env):
+            self.assertFalse(sentinel.mail_configured())
+            self.assertEqual(sentinel.process_queue(), 0)
+            with self.assertRaises(RuntimeError):
+                sentinel.send_test_mail()
+            os.environ["NYX_EMAILJS_PRIVATE_KEY"] = "PRIVATE_NEVER_LOG"
+            with patch.object(sentinel.httpx, "Client") as client_class:
+                client = client_class.return_value.__enter__.return_value
+                client.post.return_value.status_code = 200
+                sentinel.send_test_mail()
+                self.assertEqual(client.post.call_count, 1)
+                args, kwargs = client.post.call_args
+                self.assertEqual(args[0], "https://api.emailjs.com/api/v1.0/email/send")
+                params = kwargs["json"]
+                self.assertEqual(params["service_id"], "service_demo")
+                self.assertEqual(params["template_id"], "template_demo")
+                self.assertEqual(params["user_id"], "public_demo")
+                self.assertEqual(params["accessToken"], "PRIVATE_NEVER_LOG")
+                template_params = params["template_params"]
+                self.assertEqual(template_params["incident_id"], "TEST-NYX")
+                self.assertEqual(template_params["event_status"], "PRUEBA DE ENTREGA")
+                self.assertIn("SIN INCIDENTE", template_params["alert_level"])
+                self.assertNotIn("to_email", template_params)
+            # No se devuelve al llamador información detallada del proveedor.
+            with patch.object(sentinel.httpx, "Client") as client_class:
+                client = client_class.return_value.__enter__.return_value
+                client.post.return_value.status_code = 401
+                with self.assertRaisesRegex(RuntimeError, "HTTP 401"):
+                    sentinel.send_test_mail()
+
+    def test_review_false_positive_cancels_queued_email(self):
+        incident = sentinel.record_event(
+            actor_username="standard_one", category="sensitive_request",
+            severity="high", immediate=True,
+            reason="Requiere revisión", message="texto de ejemplo"
+        )
+        self.assertEqual(sentinel.list_events()[0]["mail_state"], "queued")
+        event = sentinel.review_event(incident, "false_positive")
+        self.assertEqual(event["status"], "false_positive")
+        self.assertEqual(event["mail_state"], "none")
+        env = {
+            "NYX_MAIL_PROVIDER": "emailjs",
+            "NYX_EMAILJS_SERVICE_ID": "service_demo",
+            "NYX_EMAILJS_TEMPLATE_ID": "template_demo",
+            "NYX_EMAILJS_PUBLIC_KEY": "public_demo",
+            "NYX_EMAILJS_PRIVATE_KEY": "private_demo",
+        }
+        with patch.dict(os.environ, env):
+            with patch.object(sentinel, "_send_emailjs") as send:
+                self.assertEqual(sentinel.process_queue(), 0)
+                send.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

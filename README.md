@@ -1,4 +1,4 @@
-# NYX 0.4.1 — Identity & Security
+# NYX 0.4.2 — Identity & Security
 
 ## Corrección 0.4.1 — acceso a módulos, Sentinel visible y red opcional
 
@@ -92,6 +92,98 @@ Cuando esté listo:
 
 Comprueba SEGURIDAD > Notificaciones por correo y, al desbloquear
 con contraseña administrativa, pulsa ENVIAR CORREO DE PRUEBA.
+
+
+## Security Sentinel con EmailJS (0.4.2)
+
+NYX permite elegir un transporte de correo **sin modificar los mensajes ni
+crear una API pública**: EmailJS (con tu plantilla Crimson) o SMTP.
+
+### Activar EmailJS de forma privada
+
+1. Conserva el destinatario fijo en el campo **To Email** de la
+   plantilla creada en EmailJS. Configura su asunto como
+   \`[NYX SECURITY] {{alert_level}} — {{incident_id}}\`.
+   La plantilla HTML puede seguir siendo responsiva/mobile-first.
+2. En **EmailJS > Account > Security**, habilita las solicitudes de
+   aplicaciones no navegador (API requests from non-browser applications)
+   y obtén las claves de tu propia cuenta. Se recomienda utilizar
+   la clave privada en llamadas desde servidor.
+3. Edita el archivo local \`.env.security\`. Si todavía no existe,
+   copia \`config/smtp.example.env\` y después ábrelo en un editor:
+
+       if (-not (Test-Path .env.security)) {
+           Copy-Item config\smtp.example.env .env.security
+       }
+       notepad .env.security
+
+   Completa exclusivamente en **tu computadora** estos campos:
+
+       NYX_MAIL_PROVIDER=emailjs
+       NYX_EMAILJS_SERVICE_ID=TU_SERVICE_ID
+       NYX_EMAILJS_TEMPLATE_ID=TU_TEMPLATE_ID
+       NYX_EMAILJS_PUBLIC_KEY=TU_CLAVE_PUBLICA
+       NYX_EMAILJS_PRIVATE_KEY=TU_CLAVE_PRIVADA
+       NYX_ALERT_EMAIL_TO=CORREO_ADMINISTRADOR
+
+   El campo \`NYX_ALERT_EMAIL_TO\` se muestra enmascarado en el panel
+   administrativo para comprobar la configuración; el destinatario REAL
+   debe estar fijado en EmailJS > To Email (NYX no lo suministra como
+   variable y no puede alterar el destinatario de la plantilla).
+   No guardes claves ni correos personales en GitHub, ni los compartas
+   en el chat. \`.env.security\` está excluido por \`.gitignore\`.
+4. Reinicia únicamente la API para leer los nuevos valores:
+
+       docker compose up -d --force-recreate api
+
+5. Inicia sesión como **administrador**, abre **SEGURIDAD**, autoriza
+   cambios por cinco minutos y pulsa **ENVIAR CORREO DE PRUEBA**.
+   Esta prueba lleva los campos \`TEST-NYX\`, \`PRUEBA — SIN INCIDENTE\`
+   y \`SISTEMA (PRUEBA)\`: no produce una alerta falsa.
+   Después verifica el correo recibido y, si falla, consulta las
+   opciones de seguridad de la cuenta EmailJS.
+
+El proveedor se elige exclusivamente mediante \`NYX_MAIL_PROVIDER\`
+(\`emailjs\` o \`smtp\`). **No hay sustitución silenciosa de EmailJS
+por SMTP** para evitar envíos duplicados o inesperados.
+Con \`smtp\`, permanecen disponibles las variables existentes
+\`NYX_SMTP_*\`.
+
+### Campos de la plantilla
+
+| Variable EmailJS | Valor enviado por NYX |
+| --- | --- |
+| \`incident_id\` | Identificador, p. ej. SEC-000001 |
+| \`alert_level\` | ALTO / MEDIO |
+| \`event_date\` | Fecha y hora UTC |
+| \`username\` | Cuenta que inició sesión (o intento de login registrado) |
+| \`module_name\` | Privacidad del creador / Control de acceso / Autenticación |
+| \`event_status\` | PENDIENTE DE REVISIÓN |
+| \`user_message\` | Consulta o evento concreto, truncado y con secretos detectables ocultos |
+| \`security_analysis\` | Motivo de la regla disparada |
+| \`action_taken\` | Acción efectivamente aplicada por el backend |
+
+La aplicación solo envía estas nueve variables desde FastAPI a una URL
+fija \`https://api.emailjs.com/api/v1.0/email/send\`. Las claves
+nunca aparecen en React. Nunca se usa \`{{{user_message}}}\` en la
+plantilla: las dobles llaves de EmailJS permiten escape HTML.
+
+EmailJS ofrece hasta **una petición por segundo**. Para evitar
+ráfagas y proteger la cuota, el trabajador de NYX procesa como
+máximo una alerta de EmailJS por ciclo de aproximadamente 90
+segundos. Ante un error HTTP o red, la alerta permanece en SQLite
+y se vuelve a intentar. Las alertas pendientes que el administrador
+clasifique como **falso positivo** se cancelan antes del envío.
+
+**Privacidad:** enviar alertas al servicio externo implica compartir
+con EmailJS la cuenta involucrada, la consulta concreta y la razón
+de seguridad. No se transmite el historial general ni la base de
+memorias. Aunque se ocultan contraseñas reconocibles, el filtrado
+no es perfecto: evita guardar secretos innecesarios en las consultas.
+Los correos aceptados por la API no garantizan entrega final; comprueba
+la bandeja y el historial de EmailJS. NYX no hace envíos sin que
+configures voluntariamente el proveedor y ejecutes la prueba o se
+produzca una alerta posterior.
 
 
 ## Lo que ofrece

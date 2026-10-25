@@ -201,6 +201,28 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(offline.status_code, 200)
         self.assertEqual(offline.json()["mode"], "offline")
 
+    def test_emailjs_mail_status_admin_only(self):
+        from app import sentinel
+        email_config = {
+            "NYX_MAIL_PROVIDER": "emailjs",
+            "NYX_EMAILJS_SERVICE_ID": "service_test",
+            "NYX_EMAILJS_TEMPLATE_ID": "template_test",
+            "NYX_EMAILJS_PUBLIC_KEY": "public_test",
+            "NYX_EMAILJS_PRIVATE_KEY": "private_test",
+        }
+        with patch.dict(os.environ, email_config):
+            result = self.client.get("/api/security/mail-status")
+            self.assertEqual(result.status_code, 200)
+            self.assertEqual(result.json()["provider"], "emailjs")
+            self.assertTrue(result.json()["configured"])
+            self.assertNotIn("private_test", str(result.json()))
+            with patch.object(sentinel, "_send_emailjs") as email:
+                sent = self.client.post("/api/security/test-mail")
+                self.assertEqual(sent.status_code, 200)
+                self.assertTrue(sent.json()["sent"])
+                email.assert_called_once()
+                self.assertEqual(email.call_args.args[0]["incident_id"], "TEST-NYX")
+
     def test_logout_clears_session(self):
         self.assertEqual(self.client.post("/api/auth/logout").status_code, 200)
         self.assertEqual(self.client.get("/api/auth/me").status_code, 401)
