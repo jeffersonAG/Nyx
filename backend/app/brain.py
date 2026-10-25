@@ -652,6 +652,51 @@ def prompt_context(result: dict, *, budget: int = 1900) -> str:
     return "\n".join(lines)
 
 
+def recommend_procedures(query: str, user_id: int, limit: int = 5) -> dict:
+    """Prioritize user-reported approaches; never auto-run them or claim proof.
+
+    Laplace-smoothed outcomes prevent a single favorable report from being
+    mistaken for certainty. All evidence remains tied to an owned case.
+    """
+    cases=[r for r in list_cases(user_id,500) if r["origin"]=="user_report"
+           and r["kind"] in {"procedure","experience"}]
+    if not cases:
+        return {"recommendations":[],"warning":"Sin experiencias evaluables."}
+    candidates=[{"item_kind":"case","id":r["id"],
+        "index_text":r["title"]+" "+r["situation"],"row":r} for r in cases]
+    relevance=lexical_scores(query,candidates)
+    groups={}
+    for r in cases:
+        key=" ".join(tokens(r["action_taken"]))
+        if not key:
+            continue
+        group=groups.setdefault(key,{"procedure":r["action_taken"],
+            "success":0,"failure":0,"partial":0,
+            "examples":[],"relevance":0.})
+        group["relevance"]=max(group["relevance"],relevance.get(("case",r["id"]),0.))
+        if r["outcome"] in {"success","failure","partial"}:
+            group[r["outcome"]]+=1
+            if len(group["examples"])<5:
+                group["examples"].append({"case_id":r["id"],
+                    "situation":r["situation"][:220],"outcome":r["outcome"],
+                    "evidence":r["evidence"][:220]})
+    recommendations=[]
+    for group in groups.values():
+        n=group["success"]+group["failure"]+group["partial"]
+        if group["relevance"]<.04 or n==0:
+            continue
+        rate=(group["success"]+.5*group["partial"]+1)/(n+2)
+        recommendations.append({**group,"sample_size":n,
+            "reported_success_estimate":round(rate,3),
+            "confidence_label":"pocos casos" if n<3 else "muestra limitada",
+            "priority":round(group["relevance"]*(.35+.65*rate),3)})
+    recommendations.sort(key=lambda r:(-r["priority"],-r["sample_size"]))
+    return {"recommendations":recommendations[:max(1,min(10,limit))],
+        "warning":"Basado en resultados reportados, no validación independiente. "
+                  "Revisa seguridad y evidencia antes de actuar.",
+        "automatic_execution":False}
+
+
 def propose_links(user_id: int, case_id: int, *, max_links: int = 5) -> list[dict]:
     """Lexical proposals are explicitly NOT verified factual/causal links."""
     anchor=get_case(user_id,case_id)
