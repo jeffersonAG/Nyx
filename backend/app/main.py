@@ -76,6 +76,24 @@ class TaskUpdate(BaseModel):
     completed: bool
 
 
+class CalendarCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=1200)
+    kind: str = Field(default="task", pattern="^(task|meeting|reservation|reminder)$")
+    start_at: str = Field(min_length=16, max_length=16)
+    end_at: str = Field(min_length=16, max_length=16)
+    reminder_minutes: int = Field(default=15, ge=0, le=10080)
+
+
+class CalendarUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=1200)
+    kind: str | None = Field(default=None, pattern="^(task|meeting|reservation|reminder)$")
+    start_at: str | None = Field(default=None, min_length=16, max_length=16)
+    end_at: str | None = Field(default=None, min_length=16, max_length=16)
+    reminder_minutes: int | None = Field(default=None, ge=0, le=10080)
+
+
 class NetworkModeRequest(BaseModel):
     enabled: bool
 
@@ -453,6 +471,50 @@ def change_task(task_id: int, request: TaskUpdate, user: security.Principal = De
 def remove_task(task_id: int, user: security.Principal = Depends(_principal)):
     if not storage.delete_task(task_id, user.id):
         raise HTTPException(status_code=404, detail="Tarea inexistente.")
+
+
+@app.get("/api/calendar")
+def calendar(user: security.Principal = Depends(_principal)):
+    return storage.list_calendar_events(user.id)
+
+
+@app.post("/api/calendar", status_code=201)
+def create_calendar(request: CalendarCreate, user: security.Principal = Depends(_principal)):
+    try:
+        return storage.add_calendar_event(user.id, **request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.patch("/api/calendar/{event_id}")
+def edit_calendar(event_id: int, request: CalendarUpdate,
+                  user: security.Principal = Depends(_principal)):
+    try:
+        changes = request.model_dump(exclude_unset=True, exclude_none=True)
+        event = storage.update_calendar_event(event_id, user.id, **changes)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if event is None:
+        raise HTTPException(status_code=404, detail="Evento inexistente.")
+    return event
+
+
+@app.delete("/api/calendar/{event_id}", status_code=204)
+def remove_calendar(event_id: int, user: security.Principal = Depends(_principal)):
+    if not storage.delete_calendar_event(event_id, user.id):
+        raise HTTPException(status_code=404, detail="Evento inexistente.")
+
+
+@app.get("/api/calendar/reminders")
+def calendar_reminders(user: security.Principal = Depends(_principal)):
+    return storage.due_calendar_reminders(user.id)
+
+
+@app.post("/api/calendar/{event_id}/acknowledge")
+def acknowledge_calendar(event_id: int, user: security.Principal = Depends(_principal)):
+    if not storage.acknowledge_calendar_reminder(event_id, user.id):
+        raise HTTPException(status_code=404, detail="Recordatorio inexistente o atendido.")
+    return {"acknowledged": True}
 
 
 @app.get("/api/memory")

@@ -148,13 +148,14 @@ class CognitiveTests(unittest.TestCase):
         self.assertIn("modo local", reply)
 
     def test_public_search_explicit_only(self):
-        from app import network
+        from app import network, research
         self.assertEqual(network.extract_wiki_query("hola"), None)
         self.assertEqual(network.extract_wiki_query("Busca en Wikipedia sobre vectores"),
                          "vectores")
         session = storage.create_session("Investigación", self.standard)
-        with patch.object(network, "search_encyclopedia", new_callable=AsyncMock,
-                          return_value={"results": [{"title": "Vectores",
+        with patch.object(research, "web_search", new_callable=AsyncMock,
+                          return_value={"query": "vectores", "provider": "Wikipedia",
+                            "results": [{"title": "Vectores", "excerpt": "Concepto de vectores",
                               "url":"https://es.wikipedia.org/wiki/Vector"}]}) as fetcher:
             reply, _ = asyncio.run(cognition.generate_reply(
                 "Busca en Wikipedia sobre vectores", session["id"],

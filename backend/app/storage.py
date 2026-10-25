@@ -99,6 +99,22 @@ def init_db() -> None:
         profile_columns = {r["name"] for r in db.execute("PRAGMA table_info(user_profiles)")}
         if "online_enabled" not in profile_columns:
             db.execute("ALTER TABLE user_profiles ADD COLUMN online_enabled INTEGER NOT NULL DEFAULT 1")
+        db.executescript("""
+            CREATE TABLE IF NOT EXISTS calendar_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_id INTEGER NOT NULL REFERENCES users(id),
+                title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                kind TEXT NOT NULL CHECK(kind IN ('task','meeting','reservation','reminder')),
+                start_at TEXT NOT NULL,
+                end_at TEXT NOT NULL,
+                reminder_minutes INTEGER NOT NULL DEFAULT 15,
+                acknowledged_at TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_calendar_owner_start
+                ON calendar_events(owner_id,start_at);
+        """)
 
 
 def adopt_legacy_records(admin_id: int) -> None:
@@ -303,3 +319,151 @@ def set_online_enabled(user_id: int, enabled: bool) -> bool:
         db.execute("UPDATE user_profiles SET online_enabled=? WHERE user_id=?",
                    (int(enabled), user_id))
     return get_online_enabled(user_id)
+
+
+
+# Calendario 0.5: fechas en hora local del perfil del usuario.
+# No se migran, reescriben ni eliminan los registros de tareas existentes.
+def _validate_calendar_fields(data: dict) -> dict:
+    from datetime import datetime
+    title = data.get("title")
+    description = data.get("description", "")
+    kind = data.get("kind", "task")
+    start = data.get("start_at")
+    end = data.get("end_at")
+    minutes = data.get("reminder_minutes", 15)
+    if not isinstance(title, str) or not 1 <= len(title.strip()) <= 160:
+        raise ValueError("El título debe tener entre 1 y 160 caracteres.")
+    if not isinstance(description, str) or len(description) > 1200:
+        raise ValueError("La descripción no puede superar 1200 caracteres.")
+    if kind not in {"task", "meeting", "reservation", "reminder"}:
+        raise ValueError("Tipo de evento inválido.")
+    if not isinstance(minutes, int) or isinstance(minutes, bool) or not 0 <= minutes <= 10080:
+        raise ValueError("Recordatorio fuera de rango (0-10080 minutos).")
+    try:
+        first = datetime.strptime(start, "%Y-%m-%dT%H:%M")
+        last = datetime.strptime(end, "%Y-%m-%dT%H:%M")
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Usa fechas locales AAAA-MM-DDTHH:MM.") from exc
+    if last <= first:
+        raise ValueError("El final debe ser posterior al inicio.")
+    if (last - first).days > 366:
+        raise ValueError("Un evento no puede durar más de un año.")
+    return {"title": title.strip(), "description": description.strip(), "kind": kind,
+            "start_at": first.strftime("%Y-%m-%dT%H:%M"),
+            "end_at": last.strftime("%Y-%m-%dT%H:%M"),
+            "reminder_minutes": minutes}
+
+
+def list_calendar_events(user_id: int) -> list[dict]:
+    with connect() as db:
+        rows = db.execute("""SELECT id,title,description,kind,start_at,end_at,
+            reminder_minutes,acknowledged_at,created_at FROM calendar_events
+            WHERE owner_id=? ORDER BY start_at,id LIMIT 3000""", (user_id,)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def calendar_conflicts(user_id: int, start_at: str, end_at: str,
+                       exclude_id: int | None = None) -> list[dict]:
+    with connect() as db:
+        rows = db.execute("""SELECT id,title,start_at,end_at FROM calendar_events
+            WHERE owner_id=? AND kind IN ('meeting','reservation')
+            AND start_at < ? AND end_at > ? AND id != ?
+            ORDER BY start_at LIMIT 8""",
+            (user_id, end_at, start_at, exclude_id or -1)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_calendar_event(user_id: int, **data) -> dict:
+    clean = _validate_calendar_fields(data)
+    if clean["kind"] in {"meeting", "reservation"} and calendar_conflicts(
+            user_id, clean["start_at"], clean["end_at"]):
+        raise ValueError("Ese horario coincide con otra reunión o reserva.")
+    with connect() as db:
+        cur = db.execute("""INSERT INTO calendar_events(
+            owner_id,title,description,kind,start_at,end_at,reminder_minutes)
+            VALUES(?,?,?,?,?,?,?)""",
+            (user_id, *(clean[k] for k in ("title","description","kind",
+                                          "start_at","end_at","reminder_minutes"))))
+        row = db.execute("""SELECT id,title,description,kind,start_at,end_at,
+            reminder_minutes,acknowledged_at,created_at
+            FROM calendar_events WHERE id=? AND owner_id=?""",
+            (cur.lastrowid,user_id)).fetchone()
+    return dict(row)
+
+
+def update_calendar_event(event_id: int, user_id: int, **changes) -> dict | None:
+    with connect() as db:
+        existing = db.execute("""SELECT title,description,kind,start_at,end_at,
+            reminder_minutes FROM calendar_events WHERE id=? AND owner_id=?""",
+            (event_id,user_id)).fetchone()
+    if not existing:
+        return None
+    merged = {**dict(existing), **changes}
+    clean = _validate_calendar_fields(merged)
+    if clean["kind"] in {"meeting", "reservation"} and calendar_conflicts(
+            user_id, clean["start_at"], clean["end_at"], event_id):
+        raise ValueError("Ese horario coincide con otra reunión o reserva.")
+    reset = bool({"start_at", "end_at", "reminder_minutes"} & changes.keys())
+    with connect() as db:
+        db.execute("""UPDATE calendar_events SET title=?,description=?,kind=?,
+            start_at=?,end_at=?,reminder_minutes=?,
+            acknowledged_at=CASE WHEN ? THEN NULL ELSE acknowledged_at END
+            WHERE id=? AND owner_id=?""",
+            (*(clean[k] for k in ("title","description","kind","start_at","end_at",
+                                 "reminder_minutes")), int(reset), event_id,user_id))
+        row = db.execute("""SELECT id,title,description,kind,start_at,end_at,
+            reminder_minutes,acknowledged_at,created_at
+            FROM calendar_events WHERE id=? AND owner_id=?""",
+            (event_id,user_id)).fetchone()
+    return dict(row)
+
+
+def delete_calendar_event(event_id: int, user_id: int) -> bool:
+    with connect() as db:
+        return bool(db.execute("DELETE FROM calendar_events WHERE id=? AND owner_id=?",
+                               (event_id,user_id)).rowcount)
+
+
+def due_calendar_reminders(user_id: int) -> list[dict]:
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    profile = get_profile(user_id)
+    try:
+        now = datetime.now(ZoneInfo(profile["timezone"])).replace(tzinfo=None)
+    except (ValueError, ZoneInfoNotFoundError):
+        now = datetime.now(ZoneInfo("America/Costa_Rica")).replace(tzinfo=None)
+    pending = []
+    for event in list_calendar_events(user_id):
+        if event["acknowledged_at"]:
+            continue
+        start = datetime.strptime(event["start_at"], "%Y-%m-%dT%H:%M")
+        remind_at = start - timedelta(minutes=event["reminder_minutes"])
+        # Sin alarmas retroactivas sobre eventos muy antiguos.
+        if remind_at <= now <= start + timedelta(minutes=30):
+            pending.append(event)
+    return pending[:20]
+
+
+def acknowledge_calendar_reminder(event_id: int, user_id: int) -> bool:
+    with connect() as db:
+        return bool(db.execute("""UPDATE calendar_events
+            SET acknowledged_at=datetime('now') WHERE id=? AND owner_id=?
+            AND acknowledged_at IS NULL""", (event_id,user_id)).rowcount)
+
+
+def search_memories(query: str, user_id: int, limit: int = 6) -> list[dict]:
+    # Memoria explícita, recuperación por términos; nunca ejecuta texto almacenado.
+    import re
+    terms = list(dict.fromkeys(re.findall(r"[\wáéíóúñ]{4,}", query.lower())))[:6]
+    if not terms:
+        return []
+    with connect() as db:
+        rows = db.execute("""SELECT id,content,created_at FROM memories
+            WHERE owner_id=? ORDER BY id DESC LIMIT 100""", (user_id,)).fetchall()
+    ranked = []
+    for row in rows:
+        hits = sum(term in row["content"].lower() for term in terms)
+        if hits:
+            ranked.append((hits,dict(row)))
+    return [row for _,row in sorted(ranked, key=lambda x: -x[0])[:limit]]

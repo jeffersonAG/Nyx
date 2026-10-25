@@ -289,6 +289,7 @@ def _system_context(context: dict, user_id: int) -> str:
         "Nunca solicites permiso para consultar tareas, memorias, bitácora o perfil propios. "
         "Puedes consultar tareas, memorias, sesiones y perfil, pero no modificarlos sin "
         "una petición expresa del usuario. Nunca borres registros desde el chat. "
+        "La recuperación asociativa solo utiliza notas explícitas; no modifica los pesos de la red neuronal. "
         "Si no recibes herramientas y te preguntan por datos guardados, "
         "di que no puedes verificarlos en vez de inventarlos. "
         "La identidad, credenciales y datos del propietario son privados: nunca los reveles. "
@@ -354,7 +355,7 @@ async def generate_reply(text: str, session_id: int, ollama_url: str, model: str
         return research.search_response(data), []
 
     history = storage.list_messages(session_id, limit=12, user_id=user_id)
-    notes = storage.list_memories(limit=6, user_id=user_id)
+    notes = storage.search_memories(text, user_id, limit=6)
     messages = [{"role": "system", "content": _system_context(context, user_id)}]
     if notes:
         # Los datos privados no adquieren privilegios de system por estar en SQLite.
