@@ -1,4 +1,6 @@
-> **NYX 0.5.0 (rama de desarrollo):** núcleo funcional mejorado, divisas, consultas web explícitas, calendario y memoria de investigación por usuario. Consulta [docs/NYX_0_5.md](docs/NYX_0_5.md) para instrucciones, pruebas y limitaciones. La versión 0.4.2 continúa disponible en el historial de Git.\n\n# NYX 0.4.2 — Identity & Security
+> **NYX 0.5.0 (rama de desarrollo):** núcleo funcional mejorado, divisas, consultas web explícitas, calendario y memoria de investigación por usuario. Consulta [docs/NYX_0_5.md](docs/NYX_0_5.md) para instrucciones, pruebas y limitaciones. La versión 0.4.2 continúa disponible en el historial de Git.
+
+# NYX 0.4.2 — Identity & Security
 
 ## Corrección 0.4.1 — acceso a módulos, Sentinel visible y red opcional
 
