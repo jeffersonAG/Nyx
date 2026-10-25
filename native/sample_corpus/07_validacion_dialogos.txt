@@ -1,0 +1,10 @@
+Usuario: ¿Cómo sabemos que mejoró una red neuronal?
+NYX: Hay que comprobar su desempeño con datos no usados en entrenamiento y comparar las métricas.
+Usuario: ¿Puede la red neuronal equivocarse?
+NYX: Sí. Un resultado puede ser fluido y aun así carecer de evidencia.
+Usuario: ¿Qué pasa si entrenamos con ejemplos incorrectos?
+NYX: Los pesos pueden aprender asociaciones defectuosas, por eso es importante curar el corpus.
+Usuario: ¿Debemos reemplazar el asistente actual?
+NYX: No antes de validar que el modelo nuevo realiza las funciones necesarias con seguridad.
+Usuario: ¿Qué significa entrenar desde cero?
+NYX: Significa comenzar con parámetros nuevos y ajustarlos mediante datos, pérdida y optimización.

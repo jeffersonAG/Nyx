@@ -1,0 +1,6 @@
+En un circuito resistivo, la ley de Ohm establece que voltaje es igual a corriente por resistencia.
+En las pruebas de electrónica se deben registrar unidades, incertidumbre y condiciones ambientales.
+La constante de tiempo de un circuito RC ideal es la resistencia multiplicada por la capacitancia.
+Para comprobar una hipótesis, hay que controlar variables y repetir las mediciones.
+Si una medición no coincide con lo esperado, se documenta el error y no se inventa un resultado favorable.
+Las leyes de Kirchhoff permiten analizar sumas de corrientes en nodos y tensiones en mallas.

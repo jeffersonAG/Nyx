@@ -1,0 +1,55 @@
+
+.nyx-calendar{margin-top:24px;padding-top:22px;border-top:1px solid #5c2639;color:#f1e2e8}
+.calendar-heading{display:flex;gap:18px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.calendar-heading h2{margin:5px 0 0;font-size:20px}
+.calendar-primary{background:#6b1d35;border:1px solid #bc355c;border-radius:4px;color:white;padding:10px 15px}
+.calendar-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:18px 0}
+.calendar-arrows,.calendar-views{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.calendar-arrows strong{margin-left:9px;color:#ffc0d2;font-size:13px}
+.calendar-arrows button,.calendar-views button,.calendar-editor-actions button,.calendar-notify-permission{
+  background:#21131c;color:#f5dce4;border:1px solid #6b2d41;border-radius:4px;padding:8px 11px}
+.calendar-views .active{background:#74213d;border-color:#ed547c}
+.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border:1px solid #502238;border-radius:5px;overflow:hidden}
+.calendar-grid.view-day{grid-template-columns:minmax(0,1fr)}
+.calendar-day-label{text-align:center;font-size:10px;color:#d18ca2;background:#210f19;padding:12px 3px;font-weight:700}
+.calendar-day{border-top:1px solid #46202f;border-right:1px solid #46202f;min-height:108px;padding:7px 5px;min-width:0;background:#120c12}
+.calendar-day.other-month{opacity:.4}
+.calendar-day.today{background:#301622}
+.calendar-grid.view-week .calendar-day,.calendar-grid.view-day .calendar-day{min-height:190px}
+.calendar-day-top{display:flex;justify-content:space-between;align-items:center}
+.calendar-day-top button{border:0;background:transparent;color:#f5e2e8;font-size:13px;font-weight:700}
+.calendar-day.today .calendar-day-top button{background:#ae2c55;padding:4px;border-radius:50%}
+.calendar-day-top small{font-size:10px;color:#c77d96}
+.calendar-day-events{display:grid;gap:4px;margin-top:8px}
+.calendar-event{display:block;overflow:hidden;text-overflow:ellipsis;text-align:left;border-radius:3px;border:1px solid #78304b;
+  border-left:3px solid #d5436b;background:#3b1828;color:#fce6ed;padding:5px;max-width:100%;font-size:11px;white-space:nowrap}
+.calendar-event small{font-size:9px;color:#eeb5c6;margin-right:5px}
+.calendar-event.kind-meeting{border-left-color:#f4ac58}
+.calendar-event.kind-reservation{border-left-color:#8c84e5}
+.calendar-event.kind-reminder{border-left-color:#75c6bf}
+.calendar-event.done{text-decoration:line-through;opacity:.55}
+.calendar-more{color:#cb89a5}
+.calendar-year{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.calendar-year-month{display:grid;gap:15px;text-align:left;background:#1f111b;border:1px solid #62223d;
+  border-radius:5px;padding:15px;color:#f3dde6;min-height:100px}
+.calendar-year-month strong{text-transform:capitalize}
+.calendar-year-month span{font-size:10px;color:#bb8ca0}
+.calendar-editor{background:#21121c;border:1px solid #672c43;border-radius:6px;margin-top:18px;padding:17px;
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.calendar-editor h3{grid-column:1/-1;margin:0 0 3px}
+.calendar-editor label{display:grid;gap:6px;font-size:12px;color:#e3b9c8}
+.calendar-editor input,.calendar-editor select,.calendar-editor textarea{width:100%;min-width:0;color:#f5e4ed;
+  background:#130d14;border:1px solid #6a2a40;border-radius:4px;padding:10px;color-scheme:dark}
+.calendar-description,.calendar-editor-actions{grid-column:1/-1}
+.calendar-editor-actions{display:flex;gap:9px;flex-wrap:wrap}
+.calendar-editor-actions .danger{border-color:#af294f;color:#ff89aa}
+.calendar-notice{color:#8dd4af;margin:12px 0}
+.calendar-error{color:#ff8ba5;margin:12px 0}
+.calendar-notify-permission{margin-top:14px;font-size:11px}
+@media (max-width:750px){.calendar-year{grid-template-columns:repeat(2,1fr)}
+ .calendar-day{min-height:80px;padding:4px 2px}
+ .calendar-event{font-size:9px;padding:3px;white-space:normal;word-break:break-word}
+ .calendar-event small{display:none}
+ .calendar-editor{grid-template-columns:1fr}
+ .calendar-day-label{font-size:9px}
+}

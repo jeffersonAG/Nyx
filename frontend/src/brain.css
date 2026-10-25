@@ -1,0 +1,72 @@
+
+/* Cognitive Brain v1 — scoped styling preserves existing Crimson UI. */
+.brain-notebook {margin:28px 0 10px;padding:22px 0 8px;border-top:1px solid #5d2a40;color:#eadbe1}
+.brain-top {display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.brain-top h2{margin:6px 0 0;font-size:20px;letter-spacing:.01em}
+.brain-version{border:1px solid #6c2942;border-radius:4px;padding:7px 10px;color:#fd86a7;
+  font:11px 'Share Tech Mono',monospace}
+.brain-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:17px 0}
+.brain-metrics>div{background:#27151e;border:1px solid #542336;padding:13px;border-radius:5px;
+  display:flex;flex-direction:column;gap:6px;min-width:0}
+.brain-metrics small{font:10px 'Share Tech Mono',monospace;letter-spacing:.02em;color:#c18ea0}
+.brain-metrics strong{font-size:18px;color:#f6cad8;overflow-wrap:anywhere}
+.brain-tabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:17px;border-bottom:1px solid #55283a;padding-bottom:8px}
+.brain-tabs button{border:1px solid #50283a;background:#1c1018;color:#bda3ac;padding:9px 12px;
+  border-radius:4px;font:11px 'Share Tech Mono',monospace}
+.brain-tabs button.selected{color:#fff;background:#73243f;border-color:#ed527e}
+.brain-content{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:17px;align-items:start}
+.brain-form,.brain-list{background:#180e15;border:1px solid #4e2838;border-radius:6px;padding:15px;min-width:0}
+.brain-form h3,.brain-list h3{font-size:14px;color:#ffdbe6;margin:0 0 13px}
+.brain-form{display:flex;flex-direction:column;gap:12px}
+.brain-form label{display:grid;gap:6px;color:#e2b8c5;font-size:12px}
+.brain-form input,.brain-form textarea,.brain-form select{width:100%;min-width:0;border:1px solid #63304a;
+  background:#110a11;color:#fff0f5;border-radius:4px;padding:10px;font:inherit;color-scheme:dark}
+.brain-form textarea{resize:vertical}
+.brain-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.brain-primary{border:1px solid #d35075;border-radius:4px;padding:12px;background:#721d3c;
+  color:#fff;font:11px 'Share Tech Mono',monospace}
+.brain-list{max-height:720px;overflow-y:auto;display:grid;align-content:start;gap:10px}
+.brain-case{background:#24131d;border:1px solid #57273d;border-left:3px solid #c14464;border-radius:5px;
+  display:grid;gap:9px;padding:14px;font-size:12px;line-height:1.55;overflow-wrap:anywhere}
+.brain-case-head{display:flex;justify-content:space-between;gap:10px;align-items:start;flex-wrap:wrap}
+.brain-case-head strong{color:#f7c7d8}
+.brain-case-head span{font:10px 'Share Tech Mono',monospace;color:#d187a0}
+.brain-case b{color:#dd94aa}
+.brain-case p{margin:0}
+.brain-case small{color:#bda4ae}
+.brain-case a{color:#f888a7;overflow-wrap:anywhere}
+.brain-case-actions{display:flex;gap:5px;flex-wrap:wrap}
+.brain-case-actions button,.brain-delete,.brain-index-status button{background:#27141e;border:1px solid #74344c;
+  color:#f2cad6;padding:8px;border-radius:4px;font:10px 'Share Tech Mono',monospace}
+.brain-delete{justify-self:start;color:#ed8ba6}
+.brain-error{color:#ff91af;border-left:3px solid #fc6388;padding:10px}
+.brain-notice{color:#a0e1b3;border-left:3px solid #64bc89;padding:10px}
+.brain-index-status{display:flex;gap:12px;justify-content:space-between;align-items:center;
+  flex-wrap:wrap;font-size:11px;color:#ce9eb1}
+.brain-feedback-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.brain-feedback-actions button{color:#dda4b5;background:#1b1018;border:1px solid #623047;
+  border-radius:4px;padding:7px 10px;font:10px 'Share Tech Mono',monospace}
+.brain-feedback-actions button.rated{color:#a6f2c2;border-color:#337856;background:#183629}
+.brain-feedback-actions button.rated.negative{color:#ffb4c9;background:#4a1628;border-color:#ad3f5c}
+.brain-feedback-actions span{color:#be899d;font-size:9px;letter-spacing:.05em}
+.brain-recommendations{display:grid;gap:10px;margin-top:15px}
+@media (max-width:1080px){.brain-content{grid-template-columns:1fr}.brain-list{max-height:none}}
+@media (max-width:680px){.brain-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .brain-form-grid{grid-template-columns:1fr}.brain-notebook{padding-top:16px}}
+
+/* Laboratorio PyTorch optativo, sin interferir con el chat habitual */
+.nyx-native-lab{margin:18px 0 26px;padding:19px;background:#191019;border:1px solid #77344e;
+  border-left:4px solid #e14c78;border-radius:6px;display:grid;gap:12px}
+.nyx-native-lab h3{margin:6px 0;font-size:17px;color:#f4d4df}
+.nyx-native-lab .brain-top>button{background:#281420;color:#e6afc1;
+  border:1px solid #71384d;border-radius:4px;padding:9px}
+.native-lab-info{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.native-lab-info span{background:#231320;border:1px solid #5a293e;
+  padding:10px;color:#bda0af;font-size:11px;overflow-wrap:anywhere}
+.native-lab-info strong{color:#f8cfdf}
+.native-lab-result{background:#100b12;border:1px solid #6e3550;border-radius:4px;padding:14px}
+.native-lab-result>strong{color:#ff97b7;font:11px 'Share Tech Mono',monospace}
+.native-lab-result pre{white-space:pre-wrap;overflow-wrap:anywhere;
+  color:#eee0e7;font:13px/1.6 'Share Tech Mono',monospace}
+.native-lab-result small{color:#bb96a8}
+@media(max-width:680px){.native-lab-info{grid-template-columns:1fr}}

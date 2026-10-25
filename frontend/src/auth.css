@@ -1,0 +1,82 @@
+.nyx-auth-page {
+  width:100vw;min-height:100vh;background:radial-gradient(ellipse at 50% 28%,#5a152b44,transparent 46%),#08070b;
+  position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:18px;color:#f6e9ef;overflow:auto;
+}
+.nyx-auth-grid{pointer-events:none;position:absolute;inset:0;opacity:.15;background:
+  repeating-linear-gradient(0deg,transparent,transparent 47px,#dc143c21 48px),
+  repeating-linear-gradient(90deg,transparent,transparent 47px,#dc143c21 48px)}
+.nyx-auth-panel{position:relative;z-index:1;width:min(100%,450px);border:1px solid #843049;
+  border-top:2px solid #e02a56;background:linear-gradient(160deg,#190f17f7,#0d0b10fc);
+  box-shadow:0 0 110px #d1214330,0 18px 60px #000b;border-radius:9px;padding:24px 35px 30px}
+.nyx-auth-top{display:flex;justify-content:space-between;gap:12px;font:10px 'Courier New',monospace;
+  color:#bd6b84;letter-spacing:.05em}
+.nyx-auth-core{display:grid;place-items:center;height:113px}
+.nyx-auth-diamond{width:68px;height:68px;display:grid;place-items:center;transform:rotate(45deg);
+  border:2px solid #eb355e;background:#310e1e;box-shadow:0 0 26px #dd1949aa,inset 0 0 20px #da245022}
+.nyx-auth-diamond span{color:#ff6a8b;font:bold 38px 'Courier New',monospace;transform:rotate(-45deg)}
+.nyx-auth-title{text-align:center}.nyx-auth-title h1{margin:0;letter-spacing:.26em;font-size:35px}
+.nyx-auth-title h1 span{color:#f23866}.nyx-auth-title p{font:10px 'Courier New',monospace;letter-spacing:.17em;color:#bd7991;margin:8px 0 25px}
+.nyx-auth-heading{text-align:center;border-top:1px solid #452633;padding-top:18px}
+.nyx-auth-heading h2{font:14px 'Courier New',monospace;letter-spacing:.1em;color:#f0d4df}
+.nyx-auth-heading p{line-height:1.55;color:#aa8d99;font-size:12px}
+.nyx-auth-form{display:flex;flex-direction:column;gap:9px;margin-top:23px}
+.nyx-auth-form label{font:10px 'Courier New',monospace;color:#e58ba7;margin:8px 0 0}
+.nyx-auth-form input{color:#ffeef3;background:#120d13;border:1px solid #693148;
+  border-radius:5px;padding:14px;width:100%;outline:none}
+.nyx-auth-form input:focus{border-color:#e8305d}
+.nyx-secret-input{position:relative}.nyx-secret-input input{padding-right:52px}
+.nyx-secret-input button{position:absolute;right:8px;top:6px;bottom:6px;background:transparent;
+  border:none;color:#d36e90;font-size:22px}
+.nyx-auth-submit{width:100%;background:#b71b46;color:#fff;border:1px solid #ec406c;
+  border-radius:5px;font:12px 'Courier New',monospace;padding:16px 12px;margin-top:14px;letter-spacing:.06em}
+.nyx-auth-submit:hover{background:#d32555}.nyx-auth-submit:disabled{opacity:.5}
+.nyx-auth-error{border:1px solid #bb3e5f;border-radius:4px;padding:10px;background:#461426;
+  font-size:12px;color:#ffb2c7}
+.nyx-auth-account{color:#e4a4b7;font:11px 'Courier New',monospace;letter-spacing:.09em;text-align:center}
+.nyx-auth-foot{text-align:center;font:9px 'Courier New',monospace;color:#92ad9e;margin-top:24px}
+.nyx-auth-bottom{position:relative;z-index:1;color:#705360;font:10px 'Courier New',monospace;margin-top:22px}
+.nyx-security-dashboard{flex:1 1 100%;min-width:0;border:1px solid #61283f;border-radius:6px;
+  padding:18px;background:#120c12}
+.nyx-security-heading{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.nyx-security-heading h2{font-size:20px}.nyx-security-heading .eyebrow{font-size:10px}
+.security-tag{color:#bc93a3;font:10px 'Courier New',monospace;border:1px solid #714057;padding:7px;border-radius:4px}
+.security-tag.elevated{color:#87ddb1;border-color:#337a56}
+.nyx-admin-auth,.nyx-create-user{display:flex;flex-direction:column;gap:10px;
+  border:1px solid #562537;background:#1d1119;padding:15px;border-radius:5px;margin:16px 0}
+.nyx-admin-auth label,.nyx-create-user label{font:11px 'Courier New',monospace;color:#c89cab}
+.nyx-admin-auth div{display:flex;gap:10px;flex-wrap:wrap}
+.nyx-admin-auth input,.nyx-create-user input{flex:1;min-width:140px;padding:11px;
+  color:#fff;background:#110a11;border:1px solid #643248;border-radius:4px}
+.nyx-admin-auth button,.nyx-create-user button,.nyx-security-unlocked button,.nyx-alert-actions button,
+.nyx-mail-info button{font:11px 'Courier New',monospace;color:#fff;border:1px solid #c6345d;
+  background:#72223b;border-radius:4px;padding:10px}
+.nyx-create-user button{align-self:flex-start}
+.nyx-security-unlocked{display:flex;gap:10px;align-items:center;justify-content:space-between;
+  color:#8cdbb2;padding:12px;font:11px 'Courier New',monospace;border:1px solid #346b52}
+.nyx-admin-error{color:#fa9ab5}.nyx-admin-notice{color:#8bd7b5}
+.nyx-security-subheading{display:flex;justify-content:space-between;align-items:center;
+  border-top:1px solid #54293a;padding-top:15px;margin-top:23px;gap:10px}
+.nyx-security-subheading h3{font-size:16px;font-weight:550;margin:2px 0 10px}
+.nyx-security-subheading button{background:#311725;border:1px solid #622b43;color:#e2a1b3;
+  padding:8px;font:10px 'Courier New',monospace}
+.nyx-security-subheading span{font:10px 'Courier New',monospace;color:#a58a96}
+.nyx-users{display:flex;flex-direction:column;gap:7px}
+.nyx-user-entry{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px;
+  background:#21141d;border:1px solid #3f2130;border-radius:5px;font-size:12px}
+.nyx-user-entry strong{flex:1}.nyx-user-entry span{color:#ec7194;font:10px 'Courier New',monospace}
+.nyx-user-entry small{color:#b69ea9}
+.nyx-alert-list{display:flex;flex-direction:column;gap:10px;max-height:400px;overflow:auto}
+.nyx-alert-entry{border:1px solid #512539;background:#1b1119;border-radius:5px;padding:13px;font-size:12px}
+.nyx-alert-head{display:flex;justify-content:space-between;gap:10px;
+  font:11px 'Courier New',monospace;color:#ff779a}
+.nyx-alert-head span{color:#e5abc0}.nyx-alert-row{font:10px 'Courier New',monospace;
+  color:#b69daa;margin-top:9px}.nyx-alert-entry p{line-height:1.6}
+.nyx-alert-entry blockquote{white-space:pre-wrap;overflow-wrap:anywhere;margin:10px 0;
+  border-left:2px solid #de3a65;padding:10px;background:#130b12;color:#eec5d4}
+.nyx-alert-actions{display:flex;gap:8px;flex-wrap:wrap}
+.nyx-mail-info{font:12px 'Courier New',monospace;color:#d0aebb;background:#21141c;
+  border:1px solid #4e2538;border-radius:5px;padding:14px;line-height:2}
+.nyx-mail-info p{font:12px 'Segoe UI',sans-serif;line-height:1.6;color:#bb9ba7}
+@media(max-width:520px){.nyx-auth-panel{padding:22px 16px}.nyx-auth-top{font-size:8px}
+  .nyx-admin-auth button,.nyx-admin-auth input{width:100%}}

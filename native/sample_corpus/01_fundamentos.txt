@@ -1,0 +1,8 @@
+NYX es un proyecto de inteligencia artificial local construido para experimentar con redes neuronales propias.
+Una red neuronal contiene capas de parámetros que transforman entradas en salidas.
+Durante el entrenamiento se calcula una función de pérdida y el optimizador ajusta los pesos.
+El algoritmo de retropropagación calcula las derivadas de la pérdida con respecto a los parámetros.
+Un modelo sin suficientes datos solamente puede aprender patrones simples del material disponible.
+Una pérdida de entrenamiento menor no garantiza respuestas correctas en información desconocida.
+Para validar una red neuronal, los datos de evaluación deben mantenerse separados de los datos de entrenamiento.
+La calidad de los datos, la diversidad y una evaluación reproducible son tan importantes como la arquitectura.

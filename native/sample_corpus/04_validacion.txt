@@ -1,0 +1,7 @@
+Una red neuronal causal predice el siguiente token a partir de una secuencia anterior.
+La atención causal impide que el modelo examine tokens futuros durante el entrenamiento.
+El conjunto de validación permite observar una aproximación de generalización con textos no entrenados.
+Cuando el modelo memoriza frases sin generalizar, su rendimiento fuera del corpus puede seguir siendo deficiente.
+Un experimento de aprendizaje necesita una línea base, una métrica, condiciones reproducibles y resultados contrastables.
+El entrenamiento desde cero exige muchos datos y capacidad de cómputo para alcanzar respuestas conversacionales sofisticadas.
+No se debe confundir la memoria externa de un asistente con la modificación de pesos de su red neuronal.
