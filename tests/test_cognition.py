@@ -95,6 +95,74 @@ class CognitiveTests(unittest.TestCase):
         self.assertIn("registrado", reply)
         self.assertEqual(storage.list_tasks(self.standard)[0]["title"], "Estudiar matrices")
 
+    def test_module_count_without_ollama_or_permission_prompt(self):
+        storage.add_task("Completar proyecto", self.standard)
+        storage.add_task("Revisar laboratorio", self.standard)
+        storage.add_task("Privada del administrador", self.admin)
+        session = storage.create_session("Conteos", self.standard)
+        storage.add_message("user", "cuantas tareas tengo pendientes ?", session["id"], self.standard)
+        with patch.object(cognition, "ask_ollama", new_callable=AsyncMock) as model:
+            reply, events = asyncio.run(cognition.generate_reply(
+                "cuantas tareas tengo pendientes ?", session["id"],
+                "http://ollama", "nyx:0.4", self.standard
+            ))
+            model.assert_not_awaited()
+        self.assertIn("2 tareas", reply)
+        self.assertNotIn("permiso", reply.lower())
+        self.assertEqual(events, [])
+
+    def test_list_tasks_direct_access(self):
+        storage.add_task("Estudiar Python", self.standard)
+        session = storage.create_session("Lista", self.standard)
+        reply, _ = asyncio.run(cognition.generate_reply(
+            "muéstrame mis tareas pendientes", session["id"],
+            "http://ollama", "nyx:0.4", self.standard
+        ))
+        self.assertIn("Estudiar Python", reply)
+
+    def test_online_weather_city(self):
+        from app import network
+        session = storage.create_session("Clima", self.standard)
+        weather = {
+            "city": "Ciudad Neily", "country": "Costa Rica",
+            "temperature_c": 29, "feels_like_c": 33, "humidity_pct": 80,
+            "precipitation_mm": 0, "wind_kmh": 5, "condition": "nublado",
+            "observed_at": "12:00", "timezone": "America/Costa_Rica"
+        }
+        with patch.object(network, "current_weather",
+                          new_callable=AsyncMock, return_value=weather) as fetcher:
+            reply, events = asyncio.run(cognition.generate_reply(
+                "puedes decirme el clima actual en ciudad neily",
+                session["id"], "http://ollama", "nyx:0.4", self.standard
+            ))
+            fetcher.assert_awaited_once()
+        self.assertIn("29 °C", reply)
+        self.assertEqual(events, [])
+        storage.set_online_enabled(self.standard, False)
+        with patch.object(network, "current_weather", new_callable=AsyncMock) as fetcher:
+            reply, _ = asyncio.run(cognition.generate_reply(
+                "puedes decirme el clima actual en ciudad neily",
+                session["id"], "http://ollama", "nyx:0.4", self.standard
+            ))
+            fetcher.assert_not_awaited()
+        self.assertIn("modo local", reply)
+
+    def test_public_search_explicit_only(self):
+        from app import network
+        self.assertEqual(network.extract_wiki_query("hola"), None)
+        self.assertEqual(network.extract_wiki_query("Busca en Wikipedia sobre vectores"),
+                         "vectores")
+        session = storage.create_session("Investigación", self.standard)
+        with patch.object(network, "search_encyclopedia", new_callable=AsyncMock,
+                          return_value={"results": [{"title": "Vectores",
+                              "url":"https://es.wikipedia.org/wiki/Vector"}]}) as fetcher:
+            reply, _ = asyncio.run(cognition.generate_reply(
+                "Busca en Wikipedia sobre vectores", session["id"],
+                "http://ollama", "nyx:0.4", self.standard
+            ))
+            fetcher.assert_awaited_once()
+        self.assertIn("https://es.wikipedia.org/wiki/Vector", reply)
+
     def test_math_validation(self):
         self.assertEqual(matrix_operation("determinant", [[2, 1], [1, -3]])["value"], "-7")
         self.assertEqual(matrix_operation("dot", [[2, 3]], [[4, 5]])["value"], "23")

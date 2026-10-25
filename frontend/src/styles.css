@@ -538,3 +538,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .nyx-logout { font:11px 'Courier New',monospace;border:1px solid #74334a;color:#efbad0;background:#29131d;padding:8px 10px;border-radius:4px; }
 .nyx-logout:hover{background:#522038;border-color:#e23b66}
 @media(max-width:680px) {.nyx-login-identity {display:none}.nyx-logout{font-size:10px;padding:7px}}
+
+/* NYX Sentinel and network status hotfix */
+.nyx-security-view { flex: 1 1 auto; min-height:0; overflow-y:auto; display:flex; flex-direction:column; padding:0; }
+.nyx-alert-banner { text-align:left; width:100%; border:1px solid #e43765; border-radius:5px;
+  background:#401221; color:#ffd4e1; font:11px 'Share Tech Mono','Courier New',monospace;
+  padding:11px 13px; box-shadow:0 0 18px #d8255330; }
+.nyx-alert-banner:hover { background:#5e1930; }

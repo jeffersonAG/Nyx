@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
-from . import storage
+from . import storage, network, direct_modules
 from .math_engine import matrix_operation
 
 TOOLS = [
@@ -276,10 +276,13 @@ def _system_context(context: dict, user_id: int) -> str:
         "sé cálido sin fingir emociones humanas y evita introducciones genéricas repetitivas. "
         "Para preguntas matemáticas, distingue correctamente conceptos y explica paso a paso; "
         "utiliza matrix_calculate para verificar operaciones concretas. "
-        "Las herramientas no son acceso a Internet. No inventes clima, noticias, tareas, "
+        "El acceso a red está disponible solo mediante consultas controladas y públicas. "
+        "No inventes clima, noticias, tareas, "
         "recordatorios ni datos externos. Solo afirma haber modificado datos después de "
         "recibir un resultado exitoso de una herramienta. "
         "Las fechas de tareas son metadatos, NO hay alarmas automáticas. "
+        "Los módulos internos están autorizados para lectura directa y no requieren permisos adicionales. "
+        "Nunca solicites permiso para consultar tareas, memorias, bitácora o perfil propios. "
         "Puedes consultar tareas, memorias, sesiones y perfil, pero no modificarlos sin "
         "una petición expresa del usuario. Nunca borres registros desde el chat. "
         "Si no recibes herramientas y te preguntan por datos guardados, "
@@ -309,6 +312,27 @@ async def generate_reply(text: str, session_id: int, ollama_url: str, model: str
     action = _direct_command(text, context, user_id)
     if action is not None:
         return action
+    modules = direct_modules.module_reply(text, user_id)
+    if modules is not None:
+        return modules, []
+
+    requested_city = network.extract_weather_location(text, user_id)
+    if requested_city is not None:
+        if not network.online_enabled(user_id):
+            return "NYX está en modo local. Activa la conexión en Configuración para consultar el clima actual.", []
+        if not requested_city:
+            return "Indícame la ciudad que deseas consultar o configura tu ciudad habitual.", []
+        data = await network.current_weather(
+            requested_city, storage.get_profile(user_id)["country"]
+        )
+        return network.weather_response(data), []
+
+    web_query = network.extract_wiki_query(text)
+    if web_query:
+        if not network.online_enabled(user_id):
+            return "NYX está en modo local y no puede consultar Wikipedia. Tus datos locales siguen disponibles.", []
+        data = await network.search_encyclopedia(web_query)
+        return network.encyclopedia_response(data), []
 
     history = storage.list_messages(session_id, limit=12, user_id=user_id)
     notes = storage.list_memories(limit=6, user_id=user_id)

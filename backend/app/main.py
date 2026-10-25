@@ -19,9 +19,9 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import cognition, security, sentinel, storage
+from . import cognition, security, sentinel, storage, network
 
-app = FastAPI(title="NYX 0.4", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="NYX 0.4.1", docs_url=None, redoc_url=None, openapi_url=None)
 OLLAMA_URL = os.environ.get("NYX_OLLAMA_URL", "http://ollama:11434").rstrip("/")
 MODEL = os.environ.get("NYX_MODEL", "nyx:0.4")
 VOICE_PATH = Path(os.environ.get("NYX_VOICE_PATH", "/voices"))
@@ -74,6 +74,10 @@ class ItemRequest(BaseModel):
 
 class TaskUpdate(BaseModel):
     completed: bool
+
+
+class NetworkModeRequest(BaseModel):
+    enabled: bool
 
 
 class EventReview(BaseModel):
@@ -309,6 +313,28 @@ def test_alert_email(user: security.Principal = Depends(require_elevated)):
     return {"sent": True}
 
 
+@app.get("/api/network/status")
+async def network_status(user: security.Principal = Depends(_principal)):
+    return await network.connectivity_status(user.id)
+
+
+@app.put("/api/network/mode")
+def set_network_mode(body: NetworkModeRequest,
+                     user: security.Principal = Depends(require_elevated)):
+    # Cambiar el modo de red es una operación de configuración privilegiada.
+    return {"enabled": storage.set_online_enabled(user.id, body.enabled)}
+
+
+@app.get("/api/security/unreviewed")
+def unreviewed_security_events(user: security.Principal = Depends(require_admin)):
+    with storage.connect() as db:
+        pending = db.execute("SELECT COUNT(*) FROM security_events WHERE status='pending'").fetchone()[0]
+        queued = db.execute(
+            "SELECT COUNT(*) FROM security_events WHERE mail_state='queued'"
+        ).fetchone()[0]
+    return {"pending": pending, "queued": queued}
+
+
 @app.get("/api/status")
 async def status(user: security.Principal = Depends(_principal)):
     try:
@@ -316,9 +342,9 @@ async def status(user: security.Principal = Depends(_principal)):
             res = await client.get(f"{OLLAMA_URL}/api/tags")
             res.raise_for_status()
             models = [x.get("name", "") for x in res.json().get("models", [])]
-        return {"online": MODEL in models, "ollama": True, "model": MODEL, "version": "0.4"}
+        return {"online": MODEL in models, "ollama": True, "model": MODEL, "version": "0.4.1"}
     except (httpx.RequestError, httpx.HTTPStatusError, ValueError):
-        return {"online": False, "ollama": False, "model": MODEL, "version": "0.4"}
+        return {"online": False, "ollama": False, "model": MODEL, "version": "0.4.1"}
 
 
 @app.get("/api/sessions")

@@ -96,6 +96,9 @@ def init_db() -> None:
         db.execute("CREATE INDEX IF NOT EXISTS idx_sessions_owner ON sessions(owner_id,updated_at)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks(owner_id,id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_memories_owner ON memories(owner_id,id)")
+        profile_columns = {r["name"] for r in db.execute("PRAGMA table_info(user_profiles)")}
+        if "online_enabled" not in profile_columns:
+            db.execute("ALTER TABLE user_profiles ADD COLUMN online_enabled INTEGER NOT NULL DEFAULT 1")
 
 
 def adopt_legacy_records(admin_id: int) -> None:
@@ -285,3 +288,18 @@ def update_profile(*, user_id: int, timezone: str, city: str,
         db.execute("""UPDATE user_profiles SET timezone=?,city=?,country=?,tone=?
             WHERE user_id=?""", (timezone, city.strip(), country.strip(), tone, user_id))
     return get_profile(user_id)
+
+
+def get_online_enabled(user_id: int) -> bool:
+    with connect() as db:
+        db.execute("INSERT OR IGNORE INTO user_profiles(user_id) VALUES (?)", (user_id,))
+        row = db.execute("SELECT online_enabled FROM user_profiles WHERE user_id=?", (user_id,)).fetchone()
+    return bool(row["online_enabled"]) if row else True
+
+
+def set_online_enabled(user_id: int, enabled: bool) -> bool:
+    with connect() as db:
+        db.execute("INSERT OR IGNORE INTO user_profiles(user_id) VALUES (?)", (user_id,))
+        db.execute("UPDATE user_profiles SET online_enabled=? WHERE user_id=?",
+                   (int(enabled), user_id))
+    return get_online_enabled(user_id)

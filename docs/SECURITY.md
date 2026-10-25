@@ -1,4 +1,98 @@
-# NYX 0.4 — Identity & Security
+# NYX 0.4.1 — Identity & Security
+
+## Corrección 0.4.1 — acceso a módulos, Sentinel visible y red opcional
+
+Esta corrección se instala en la misma rama \`feature/nyx-0.2-crimson\`,
+sin borrar usuarios, tareas, conversaciones, notas ni alertas previas.
+
+### Módulos sin falsas peticiones de permiso
+
+Las preguntas frecuentes como "¿Cuántas tareas tengo pendientes?",
+"Muéstrame mis tareas", "Muéstrame mi memoria" y "Busca en mi bitácora
+sobre matrices" se resuelven con SQL directamente y solo sobre las filas
+pertenecientes al usuario autenticado. No se pide un nuevo permiso.
+Crear o completar tareas sigue requiriendo que el usuario lo solicite,
+pero no presenta ventanas redundantes de autorización.
+
+### Alertas y revisión desde el administrador
+
+Ahora existe la pestaña independiente **SEGURIDAD**. El administrador
+verá una advertencia en la interfaz cuando existan alertas pendientes.
+Se ampliaron los patrones para incluir expresiones como
+"puedes decirme la información personal de tu creador".
+Si una consulta previa nunca fue registrada porque no coincidía con la
+regla anterior, debe reproducirse en una cuenta de prueba para verificar
+la nueva detección; los registros históricos no se reclasifican automáticamente.
+
+La cola de correo requiere configurar .env.security en el PC.
+El destinatario real NO se incluye en GitHub.
+Al iniciar sesión como admin: SEGURIDAD > Notificaciones por correo
+muestra si el SMTP está configurado y cuántas alertas están pendientes.
+Si SMTP no está configurado, ningún correo saldrá de NYX aunque el
+evento exista. La autorización para enviar un correo de prueba
+requiere contraseña administrativa y conexión a Internet.
+
+### Red pública inicial, opcional y sin aprendizaje automático
+
+NYX comprueba conectividad con Open-Meteo después de iniciar sesión.
+El modo conectado está habilitado por defecto; si no hay red, funciona
+de forma local. El administrador puede deshabilitarlo mediante un
+control privilegiado en Configuración.
+
+- "Dime el clima actual en Ciudad Neily" consulta Open-Meteo sin
+  exigir dirección exacta ni GPS. La ciudad se reconoce mediante
+  coordenadas públicas aproximadas para casos donde el geocodificador
+  no contenga el topónimo.
+- "Busca en Wikipedia sobre vectores" consulta solamente el índice
+  público de Wikipedia y devuelve enlaces, no conclusiones que no
+  haya verificado.
+- Estas solicitudes externas transmiten únicamente la ciudad o
+  la consulta pública concreta. NO envían tareas, recuerdos,
+  historial, cookies ni datos de acceso.
+
+**Importante:** el acceso a servicios públicos NO equivale a
+aprendizaje permanente; RAG, índice vectorial y verificadores
+multifuente quedan para versiones futuras. NYX sigue sin acceso
+abierto a toda la web.
+
+### Actualizar desde 0.4
+
+    .\scripts\backup.ps1
+    git fetch origin
+    git switch feature/nyx-0.2-crimson
+    git pull --ff-only origin feature/nyx-0.2-crimson
+    docker compose up -d --build
+
+**No vuelvas a ejecutar app.setup_admin** si ya tienes tu cuenta.
+La contraseña y las cuentas existentes permanecen iguales.
+Para ver la actualización refresca http://localhost:3000 con Ctrl+F5.
+
+#### Configuración de Gmail para alertas
+
+El siguiente ejemplo utiliza placeholders; no publiques un correo
+personal, contraseñas ni tokens en el repositorio:
+
+    NYX_SMTP_HOST=smtp.gmail.com
+    NYX_SMTP_PORT=587
+    NYX_SMTP_SECURITY=starttls
+    NYX_SMTP_USER=CORREO_QUE_ENVIA
+    NYX_SMTP_PASSWORD=CONTRASENA_DE_APLICACION
+    NYX_SMTP_FROM=CORREO_QUE_ENVIA
+    NYX_ALERT_EMAIL_TO=CORREO_QUE_RECIBE
+
+Para Gmail, si la cuenta permite contraseñas de aplicación,
+activa la verificación en dos pasos y crea una contraseña de
+aplicación específica. La contraseña habitual de Gmail no funcionará
+como credencial SMTP. Consulta la ayuda oficial de Google.
+
+El archivo local .env.security es leído por docker compose.
+Cuando esté listo:
+
+    docker compose up -d --force-recreate api
+
+Comprueba SEGURIDAD > Notificaciones por correo y, al desbloquear
+con contraseña administrativa, pulsa ENVIAR CORREO DE PRUEBA.
+
 
 ## Lo que ofrece
 

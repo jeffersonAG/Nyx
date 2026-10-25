@@ -13,6 +13,7 @@ const MENU = [
   { id: 'tasks', icon: '☷', label: 'TAREAS' },
   { id: 'memory', icon: '▤', label: 'MEMORIA' },
   { id: 'settings', icon: '⚙', label: 'CONFIGURACIÓN' },
+  { id: 'security', icon: '♢', label: 'SEGURIDAD' },
 ];
 
 async function api(path, options = {}) {
@@ -92,6 +93,8 @@ export default function App() {
   const [auth, setAuth] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [status, setStatus] = useState({ online: false, model: 'nyx:0.4' });
+  const [networkStatus, setNetworkStatus] = useState({enabled: true, connected: false, mode: 'offline'});
+  const [alertInfo, setAlertInfo] = useState({pending: 0, queued: 0});
   const [voiceReady, setVoiceReady] = useState({ tts_ready: false, stt_ready: false });
   const [sessions, setSessions] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -139,7 +142,7 @@ export default function App() {
     const results = await Promise.allSettled([
       api('/api/sessions'), api('/api/tasks'), api('/api/memory'),
       api('/api/status'), api('/api/voice/status'),
-      api('/api/profile'), api('/api/context'),
+      api('/api/profile'), api('/api/context'), api('/api/network/status'),
     ]);
     if (results[0].status === 'fulfilled') {
       setSessions(results[0].value);
@@ -156,6 +159,7 @@ export default function App() {
     if (results[4].status === 'fulfilled') setVoiceReady(results[4].value);
     if (results[5].status === 'fulfilled') setProfile(results[5].value);
     if (results[6].status === 'fulfilled') setClockInfo(results[6].value);
+    if (results[7].status === 'fulfilled') setNetworkStatus(results[7].value);
     if (results.some(r => r.status === 'rejected')) setError('Algunos servicios no respondieron.');
   }, []);
 
@@ -182,6 +186,18 @@ export default function App() {
   useEffect(() => {
     if (auth && !auth.must_change) refresh();
   }, [auth?.id, auth?.must_change, refresh]);
+
+  useEffect(() => {
+    if (auth?.role !== 'admin' || auth?.must_change) {
+      setAlertInfo({pending: 0, queued: 0});
+      return;
+    }
+    let active = true;
+    api('/api/security/unreviewed').then(stats => {
+      if (active) setAlertInfo(stats);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [auth?.id, auth?.role, auth?.must_change, tab]);
   useEffect(() => {
     if (tab === 'chat') bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages, tab, busy]);
@@ -419,6 +435,20 @@ export default function App() {
     setError('');
   }
 
+  async function changeNetworkMode(enabled) {
+    if (!auth?.elevated) {
+      setError('Primero debes autorizar cambios administrativos en Seguridad.');
+      return;
+    }
+    try {
+      await api('/api/network/mode', {
+        method: 'PUT', body: JSON.stringify({enabled}),
+      });
+      setNetworkStatus(await api('/api/network/status'));
+      setError('');
+    } catch (err) { setError(err.message); }
+  }
+
   async function send(event) {
     event.preventDefault();
     const text = draft.trim();
@@ -638,7 +668,7 @@ export default function App() {
       <div className="top-center"><span className="bar-line" /> PERSONAL LOCAL INTELLIGENCE <span className="bar-line" /></div>
       <div className="top-state"><span className={'led ' + (status.online ? 'on' : 'off')} />
         <span>{status.online ? 'NÚCLEO CONECTADO' : 'MODELO DESCONECTADO'}</span>
-        <small>BUILD 0.4 / LOCALHOST</small>
+        <small>BUILD 0.4.1 / LOCALHOST</small>
       </div>
     </header>
     <div className="shell">
@@ -646,7 +676,7 @@ export default function App() {
         <div className="section-caption">/ NAVIGATION MODULE</div>
         <button className="start-session" type="button" onClick={newSession}><span>＋</span> NUEVA CONVERSACIÓN</button>
         <nav aria-label="Navegación principal">
-          {MENU.filter(item => item.id !== 'settings' || auth.role === 'admin').map(item => <button type="button" key={item.id}
+          {MENU.filter(item => !['settings','security'].includes(item.id) || auth.role === 'admin').map(item => <button type="button" key={item.id}
             className={'nav-item ' + (tab === item.id ? 'active' : '')}
             onClick={() => { setTab(item.id); setItemDraft(''); setError(''); }}>
             <span className="nav-icon">{item.icon}</span><span>{item.label}</span>
@@ -666,12 +696,17 @@ export default function App() {
           <div><div className="eyebrow">NYX / {tab.toUpperCase()} / SYSTEM INTERFACE</div>
             <h1>{MENU.find(n => n.id === tab)?.label}</h1></div>
           <div className="head-actions">
-            <span className="build-tag">◈ V0.4 · SENTINEL</span>
+            <span className="build-tag">◈ V0.4.1 · SENTINEL</span>
             <span className="nyx-login-identity">{auth.username} · {auth.role === 'admin' ? 'ADMIN' : 'USUARIO'}</span>
             <button className="nyx-logout" title="Cerrar sesión" onClick={logoutUser}>⏻ SALIR</button>
             <button className="small-icon" title="Mostrar u ocultar panel de estado" onClick={() => setRightOpen(!rightOpen)}>▣</button>
           </div>
         </div>
+        {auth.role === 'admin' && alertInfo.pending > 0 && tab !== 'security' &&
+          <button className="nyx-alert-banner" onClick={() => setTab('security')}>
+            ⚠ SECURITY SENTINEL · {alertInfo.pending} alerta{alertInfo.pending === 1 ? '' : 's'} pendiente{alertInfo.pending === 1 ? '' : 's'}
+            {alertInfo.queued > 0 ? ' · ' + alertInfo.queued + ' correo(s) en cola' : ''} · REVISAR
+          </button>}
         {error && <div className="error-bar" role="alert"><span>⚠ {error}</span>
           <button onClick={() => setError('')} aria-label="Cerrar alerta">×</button></div>}
 
@@ -881,13 +916,25 @@ export default function App() {
             <div className="detail-row"><span>Reconocimiento</span><b>{voiceReady.stt_ready ? 'VOSK LISTO' : 'PENDIENTE'}</b></div>
             <div className="detail-row"><span>Persistencia</span><b>SQLITE / DOCKER</b></div>
             <div className="detail-row"><span>Herramientas</span><b>COGNITIVE CORE</b></div>
+            <div className="detail-row"><span>Internet</span>
+              <b>{networkStatus.mode === 'online' ? 'CONECTADO' : 'LOCAL / OFFLINE'}</b></div>
+            <div className="switch-row"><span>Habilitar consultas públicas de red</span>
+              <input type="checkbox" checked={Boolean(networkStatus.enabled)}
+                disabled={!auth.elevated}
+                onChange={e => changeNetworkMode(e.target.checked)}/>
+            </div>
+            <p className="muted">El modo conectado permite consultas meteorológicas y búsquedas públicas explícitas. No descarga ni aprende contenidos automáticamente.</p>
             <div className="detail-row"><span>Zona horaria</span><b>{clockInfo?.timezone || profile.timezone}</b></div>
             <p className="muted">Micrófono desactivado por defecto. La captura se inicia únicamente al pulsar el botón correspondiente.</p>
           </div>
-          <AdminPanel auth={auth} api={api} onElevated={updateAuth}/>
         </div>}
 
-        <footer className="footer">NYX 0.4 <span>◆</span> LOCAL INTELLIGENCE <span>◆</span> CRIMSON SYSTEM</footer>
+        {tab === 'security' && auth.role === 'admin' &&
+          <div className="nyx-security-view">
+            <AdminPanel auth={auth} api={api} onElevated={updateAuth}/>
+          </div>}
+
+        <footer className="footer">NYX 0.4.1 <span>◆</span> LOCAL INTELLIGENCE <span>◆</span> CRIMSON SYSTEM</footer>
       </main>
       {rightOpen && <aside className="inspector">
         <div className="section-caption">/ NYX CORE</div>
@@ -895,6 +942,10 @@ export default function App() {
         <div className="core-label">{voiceState === 'idle' ? 'EN ESPERA' : voiceState === 'listening' ? 'ESCUCHANDO' : voiceState === 'speaking' ? 'RESPONDIENDO' : 'PROCESANDO'}</div>
         <div className="inspector-section"><div className="section-caption">/ STATUS MATRIX</div>
           <div className="detail-row"><span>LLM</span><strong className={status.online ? 'positive' : 'negative'}>{status.online ? 'ONLINE' : 'OFFLINE'}</strong></div>
+          <div className="detail-row"><span>INTERNET</span>
+            <strong className={networkStatus.connected ? 'positive' : 'negative'}>
+              {networkStatus.connected ? 'ONLINE' : 'LOCAL'}
+            </strong></div>
           <div className="detail-row"><span>TTS LOCAL</span><strong>{voiceReady.tts_ready ? 'READY' : 'PENDING'}</strong></div>
           <div className="detail-row"><span>MIC / STT</span><strong>{voiceReady.stt_ready ? 'READY' : 'PENDING'}</strong></div>
           <div className="detail-row"><span>VOZ</span><strong>{voiceProfile.toUpperCase()}</strong></div>

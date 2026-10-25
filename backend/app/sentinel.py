@@ -45,7 +45,32 @@ def sanitize_message(content: str) -> str:
 
 
 def sensitive_creator_request(text: str) -> bool:
-    return bool(_SENSITIVE.search(text[:4000]))
+    """Detecta intentos de obtener datos personales, no preguntas públicas genéricas.
+
+    Se normalizan acentos y mayúsculas antes de aplicar reglas.
+    Toda detección requiere una referencia al propietario y a información
+    sensible; no se envían notificaciones por menciones aisladas.
+    """
+    import unicodedata
+    normalized = unicodedata.normalize("NFKD", text[:4000])
+    normalized = normalized.encode("ascii", "ignore").decode().lower()
+    normalized = re.sub(r"\s+", " ", normalized)
+    owner = re.search(r"\b(?:creador|administrador|admin|dueno|propietario|jgr|j\.g\.r\.)\b", normalized)
+    sensitive = re.search(
+        r"\b(?:informacion personal|datos personales|informacion privada|"
+        r"informacion confidencial|documentos privados|secretos|"
+        r"contrasena|password|credenciales|clave privada|token|"
+        r"cuenta bancaria|datos bancarios|correo personal|"
+        r"direccion personal|telefono personal|identidad privada)\b", normalized
+    )
+    intent = re.search(
+        r"\b(?:dime|decirme|dame|mu[eé]strame|muestrame|"
+        r"revela|revelar|proporciona|proporcionar|comparte|"
+        r"compartir|necesito|quiero|cual es|puedes)\b", normalized
+    )
+    if not owner or not sensitive or not intent:
+        return False
+    return abs(owner.start() - sensitive.start()) <= 240
 
 
 def init_events_db() -> None:
