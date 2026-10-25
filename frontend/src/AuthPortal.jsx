@@ -37,7 +37,7 @@ export default function AuthPortal({ mode = 'login', username = '', onLogin, onC
       <div className="nyx-auth-core" aria-hidden="true"><div className="nyx-auth-diamond"><span>N</span></div></div>
       <div className="nyx-auth-title">
         <h1>NYX<span>_</span></h1>
-        <p>CRIMSON INTELLIGENCE SYSTEM</p>
+        <p>ASISTENTE PERSONAL INTELIGENTE</p>
       </div>
       <div className="nyx-auth-heading">
         <h2>{mode === 'change' ? 'ACTUALIZAR CREDENCIALES' : 'CONTROL DE ACCESO'}</h2>

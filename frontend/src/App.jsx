@@ -103,6 +103,7 @@ export default function App() {
   const [tasks, setTasks] = useState([]);
   const [dueAlerts, setDueAlerts] = useState([]);
   const [memories, setMemories] = useState([]);
+  const [knowledge, setKnowledge] = useState([]);
   const [profile, setProfile] = useState({
     timezone: 'America/Costa_Rica', city: '', country: '', tone: 'natural',
   });
@@ -183,6 +184,7 @@ export default function App() {
       api('/api/sessions'), api('/api/tasks'), api('/api/memory'),
       api('/api/status'), api('/api/voice/status'),
       api('/api/profile'), api('/api/context'), api('/api/network/status'),
+      api('/api/knowledge'),
     ]);
     if (results[0].status === 'fulfilled') {
       setSessions(results[0].value);
@@ -200,6 +202,7 @@ export default function App() {
     if (results[5].status === 'fulfilled') setProfile(results[5].value);
     if (results[6].status === 'fulfilled') setClockInfo(results[6].value);
     if (results[7].status === 'fulfilled') setNetworkStatus(results[7].value);
+    if (results[8].status === 'fulfilled') setKnowledge(results[8].value);
     if (results.some(r => r.status === 'rejected')) setError('Algunos servicios no respondieron.');
   }, []);
 
@@ -217,7 +220,7 @@ export default function App() {
       csrfToken = '';
       setAuth(null);
       setSelectedId(null); setSessions([]); setMessages([]);
-      setTasks([]); setMemories([]); setTab('chat');
+      setTasks([]); setMemories([]); setKnowledge([]); setTab('chat');
     };
     window.addEventListener('nyx-session-expired', expired);
     return () => { active = false; window.removeEventListener('nyx-session-expired', expired); };
@@ -516,6 +519,9 @@ export default function App() {
         if (changed[0].status === 'fulfilled') setTasks(changed[0].value);
         if (changed[1].status === 'fulfilled') setMemories(changed[1].value);
       }
+      // La búsqueda pública puede actualizar la base de conocimiento incluso sin tool_calls.
+      if (/^(?:nyx[,!:]?\s*)?(?:busca|buscar|investiga|investigar|consulta|averigua)/i.test(text))
+        api('/api/knowledge').then(setKnowledge).catch(() => {});
       if (voiceEnabled && voiceReady.tts_ready) void playVoice(data.reply);
       else setVoiceState('idle');
     } catch (err) {
@@ -896,6 +902,25 @@ export default function App() {
           </div>
           {tab === 'tasks' && <CalendarPanel api={api} tasks={tasks}/>}
         </div>}
+
+        {tab === 'memory' && <section className="nyx-knowledge-panel">
+          <div className="panel-top"><div><span className="eyebrow">/ INVESTIGACIONES PÚBLICAS</span>
+            <h2>Conocimiento consultado</h2></div><span className="count-chip">{knowledge.length} FUENTES</span></div>
+          <p className="muted">Extractos guardados únicamente después de búsquedas solicitadas. No entrenan el modelo, pueden quedar desactualizados y se pueden eliminar.</p>
+          <div className="record-list">{knowledge.map(item=><div className="record" key={item.id}>
+            <span className="record-glyph">⌕</span>
+            <div><strong>{item.title}</strong><p>{item.excerpt}</p>
+              <a href={item.source_url} target="_blank" rel="noopener noreferrer">{item.source_url}</a>
+              <small>CONSULTADO: {item.retrieved_at} UTC · {item.provider}</small></div>
+            <button title="Eliminar investigación" onClick={async()=>{
+              if(!window.confirm('¿Eliminar este extracto guardado?'))return;
+              try{await api('/api/knowledge/'+item.id,{method:'DELETE'});
+                setKnowledge(await api('/api/knowledge'));}catch(err){setError(err.message);}
+            }}>×</button>
+          </div>)}
+          {!knowledge.length&&<p className="muted">Todavía no hay investigaciones guardadas.</p>}
+          </div>
+        </section>}
 
         {tab === 'settings' && auth.role === 'admin' && <div className="settings-layout">
           <div className="settings-card"><div className="eyebrow">/ AUDIO ENGINE</div>

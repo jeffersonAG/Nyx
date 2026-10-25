@@ -557,3 +557,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .nyx-reminder-alert strong {font-size:14px;color:#fff;}
 .nyx-reminder-alert small {color:#e8a6ba;}
 .nyx-reminder-alert button {background:#702139;border:1px solid #b53d5d;color:white;padding:9px;border-radius:4px;}
+
+.nyx-knowledge-panel{margin:22px 0;padding:18px;background:#170d15;border:1px solid #562338;border-radius:6px;}
+.nyx-knowledge-panel .record{align-items:flex-start;}
+.nyx-knowledge-panel .record p{line-height:1.55;color:#d5bdc5;font-size:12px;white-space:pre-wrap}
+.nyx-knowledge-panel .record a{display:block;color:#fc88a7;font-size:11px;overflow-wrap:anywhere;margin:8px 0;}
+.nyx-knowledge-panel .record strong{color:#f9e1eb}

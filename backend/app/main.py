@@ -517,6 +517,17 @@ def acknowledge_calendar(event_id: int, user: security.Principal = Depends(_prin
     return {"acknowledged": True}
 
 
+@app.get("/api/knowledge")
+def knowledge(user: security.Principal = Depends(_principal)):
+    return storage.list_research(user.id,limit=100)
+
+
+@app.delete("/api/knowledge/{record_id}", status_code=204)
+def delete_knowledge(record_id: int, user: security.Principal = Depends(_principal)):
+    if not storage.delete_research(record_id,user.id):
+        raise HTTPException(status_code=404, detail="Investigación inexistente.")
+
+
 @app.get("/api/memory")
 def memory(user: security.Principal = Depends(_principal)):
     return storage.list_memories(100, user.id)

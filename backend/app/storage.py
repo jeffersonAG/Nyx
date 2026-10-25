@@ -114,6 +114,19 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_calendar_owner_start
                 ON calendar_events(owner_id,start_at);
+            CREATE TABLE IF NOT EXISTS research_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_id INTEGER NOT NULL REFERENCES users(id),
+                query TEXT NOT NULL,
+                title TEXT NOT NULL,
+                excerpt TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                retrieved_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(owner_id,query,source_url)
+            );
+            CREATE INDEX IF NOT EXISTS idx_research_owner
+                ON research_records(owner_id,retrieved_at);
         """)
 
 
@@ -467,3 +480,65 @@ def search_memories(query: str, user_id: int, limit: int = 6) -> list[dict]:
         if hits:
             ranked.append((hits,dict(row)))
     return [row for _,row in sorted(ranked, key=lambda x: -x[0])[:limit]]
+
+
+
+def save_research(user_id: int, query: str, provider: str, results: list[dict]) -> int:
+    """Almacena sólo extractos públicos obtenidos tras una búsqueda solicitada.
+
+    No guarda contraseñas, cookies, historial de conversación ni el resultado
+    completo del proveedor. Mantiene como máximo 300 extractos por usuario.
+    """
+    from urllib.parse import urlparse
+    saved = 0
+    with connect() as db:
+        for item in results[:5]:
+            url = str(item.get("url","")).strip()[:500]
+            parts = urlparse(url)
+            if parts.scheme != "https" or not parts.hostname:
+                continue
+            title = str(item.get("title","")).strip()[:160]
+            excerpt = str(item.get("excerpt","")).strip()[:650]
+            if not title or not excerpt:
+                continue
+            db.execute("""INSERT INTO research_records
+                (owner_id,query,title,excerpt,source_url,provider)
+                VALUES (?,?,?,?,?,?)
+                ON CONFLICT(owner_id,query,source_url) DO UPDATE SET
+                  title=excluded.title, excerpt=excluded.excerpt,
+                  provider=excluded.provider, retrieved_at=datetime('now')""",
+                (user_id,query[:135],title,excerpt,url,provider[:80]))
+            saved += 1
+        db.execute("""DELETE FROM research_records WHERE owner_id=? AND id NOT IN (
+            SELECT id FROM research_records WHERE owner_id=?
+            ORDER BY retrieved_at DESC,id DESC LIMIT 300)""", (user_id,user_id))
+    return saved
+
+
+def list_research(user_id: int, limit: int = 100) -> list[dict]:
+    with connect() as db:
+        rows = db.execute("""SELECT id,query,title,excerpt,source_url,provider,retrieved_at
+            FROM research_records WHERE owner_id=? ORDER BY retrieved_at DESC,id DESC
+            LIMIT ?""", (user_id,max(1,min(300,limit)))).fetchall()
+    return [dict(row) for row in rows]
+
+
+def delete_research(record_id: int, user_id: int) -> bool:
+    with connect() as db:
+        return bool(db.execute("DELETE FROM research_records WHERE id=? AND owner_id=?",
+                               (record_id,user_id)).rowcount)
+
+
+def search_research(query: str, user_id: int, limit: int = 4) -> list[dict]:
+    import re
+    words = list(dict.fromkeys(re.findall(r"[\wáéíóúñ]{5,}",query.lower())))[:8]
+    if not words:
+        return []
+    ranked = []
+    for item in list_research(user_id,300):
+        corpus = (item["query"]+" "+item["title"]+" "+item["excerpt"]).lower()
+        count = sum(1 for word in words if word in corpus)
+        if count:
+            ranked.append((count,item))
+    ranked.sort(key=lambda row: (-row[0],-row[1]["id"]))
+    return [item for _,item in ranked[:max(1,min(8,limit))]]
