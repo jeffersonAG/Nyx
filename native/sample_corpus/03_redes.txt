@@ -1,0 +1,6 @@
+En una red de computadoras, el diagnóstico debe empezar con observaciones comprobables.
+Si una antena inalámbrica deja de responder, es útil comprobar energía, cables y configuración de red.
+Una dirección IP identifica de forma lógica una interfaz dentro de una red.
+Las VLAN permiten dividir dominios de capa dos de manera lógica.
+Los procedimientos de mantenimiento deben incluir medidas de seguridad, cambios autorizados y criterios de reversión.
+Una experiencia técnica puede servir de referencia, pero no garantiza el éxito en otro equipo o entorno.
