@@ -24,6 +24,8 @@ services:
     env_file:
       - path: .env.security
         required: false
+      - path: .env.brain
+        required: false
     volumes:
       - nyx_memory:/data
       - nyx_voice:/voices

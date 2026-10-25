@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from . import cognition, security, sentinel, storage, network, brain
 
-app = FastAPI(title="NYX 0.5.0", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="NYX 0.6.0", docs_url=None, redoc_url=None, openapi_url=None)
 OLLAMA_URL = os.environ.get("NYX_OLLAMA_URL", "http://ollama:11434").rstrip("/")
 MODEL = os.environ.get("NYX_MODEL", "nyx:0.4")
 VOICE_PATH = Path(os.environ.get("NYX_VOICE_PATH", "/voices"))
@@ -390,9 +390,9 @@ async def status(user: security.Principal = Depends(_principal)):
             res = await client.get(f"{OLLAMA_URL}/api/tags")
             res.raise_for_status()
             models = [x.get("name", "") for x in res.json().get("models", [])]
-        return {"online": MODEL in models, "ollama": True, "model": MODEL, "version": "0.5.0"}
+        return {"online": MODEL in models, "ollama": True, "model": MODEL, "version": "0.6.0"}
     except (httpx.RequestError, httpx.HTTPStatusError, ValueError):
-        return {"online": False, "ollama": False, "model": MODEL, "version": "0.5.0"}
+        return {"online": False, "ollama": False, "model": MODEL, "version": "0.6.0"}
 
 
 @app.get("/api/sessions")
@@ -484,9 +484,22 @@ async def chat(request: ChatRequest, user: security.Principal = Depends(_princip
 
 
 @app.get("/api/brain/status")
-def brain_status(user: security.Principal = Depends(_principal)):
+async def brain_status(user: security.Principal = Depends(_principal)):
+    model = os.environ.get("NYX_BRAIN_EMBED_MODEL", "").strip()
+    installed = False
+    if model:
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(4.0, connect=2.0),
+                                         follow_redirects=False) as client:
+                response = await client.get(f"{OLLAMA_URL}/api/tags")
+                response.raise_for_status()
+                names = {item.get("name", "") for item in response.json().get("models", [])}
+            installed = model in names or (model + ":latest") in names
+        except (httpx.RequestError, httpx.HTTPStatusError, ValueError):
+            installed = False
     return {**brain.metrics(user.id),
-            "embedding_model": os.environ.get("NYX_BRAIN_EMBED_MODEL", "").strip() or None,
+            "embedding_model": model or None,
+            "embedding_model_installed": installed,
             "semantic_index_optional": True, "automatic_weight_training": False}
 
 

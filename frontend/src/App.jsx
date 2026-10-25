@@ -758,7 +758,7 @@ export default function App() {
         </nav>
         <div className="side-bottom">
           <div className="section-caption">/ NYX</div>
-          <div className="meter"><span>VERSIÓN</span><strong>{status.version || '0.5.0'}</strong></div>
+          <div className="meter"><span>VERSIÓN</span><strong>{status.version || '0.6.0'}</strong></div>
           <button type="button" className="plain-link" onClick={() => refresh()}>↻ SINCRONIZAR</button>
         </div>
       </aside>}
@@ -767,7 +767,7 @@ export default function App() {
           <div><div className="eyebrow">NYX / {tab.toUpperCase()} / SYSTEM INTERFACE</div>
             <h1>{MENU.find(n => n.id === tab)?.label}</h1></div>
           <div className="head-actions">
-            {auth.role === 'admin' && <span className="build-tag">◈ NYX {status.version || '0.5.0'}</span>}
+            {auth.role === 'admin' && <span className="build-tag">◈ NYX {status.version || '0.6.0'}</span>}
             <span className="nyx-login-identity">{auth.username} · {auth.role === 'admin' ? 'ADMIN' : 'USUARIO'}</span>
             <button className="nyx-logout" title="Cerrar sesión" onClick={logoutUser}>⏻ SALIR</button>
             <button className="small-icon" title="Mostrar u ocultar panel de estado" onClick={() => setRightOpen(!rightOpen)}>▣</button>
@@ -1044,7 +1044,7 @@ export default function App() {
             <AdminPanel auth={auth} api={api} onElevated={updateAuth}/>
           </div>}
 
-        <footer className="footer">NYX {status.version || '0.5.0'} <span>◆</span> SISTEMA DE ASISTENCIA LOCAL</footer>
+        <footer className="footer">NYX {status.version || '0.6.0'} <span>◆</span> SISTEMA DE ASISTENCIA LOCAL</footer>
       </main>
       {rightOpen && <aside className="inspector">
         <div className="section-caption">/ NYX CORE</div>
