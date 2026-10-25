@@ -33,7 +33,7 @@ class NeuralNetworkTests(unittest.TestCase):
 
     def test_dataset_train_validation_document_split(self):
         corpus = load_corpus(SAMPLES, context=32)
-        self.assertEqual(corpus.documents, 4)
+        self.assertEqual(corpus.documents, 7)
         self.assertGreater(corpus.train.shape[0], corpus.validation.shape[0])
         rng = torch.Generator().manual_seed(2)
         x,y = sample_batch(corpus.train, batch_size=3, context=32, generator=rng)
