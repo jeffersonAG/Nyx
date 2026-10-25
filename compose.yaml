@@ -21,6 +21,7 @@ services:
       NYX_MODEL: nyx:0.4
       NYX_DB_PATH: /data/nyx.db
       NYX_VOICE_PATH: /voices
+      NYX_NATIVE_URL: http://native:8010
     env_file:
       - path: .env.security
         required: false
@@ -30,6 +31,20 @@ services:
       - nyx_memory:/data
       - nyx_voice:/voices
     depends_on: [ollama]
+    networks: [nyx_internal]
+
+  # Modelo nuevo de PyTorch: perfil OPTATIVO; no se inicia con NYX normal.
+  native:
+    profiles: [native]
+    build:
+      context: ./native
+    restart: unless-stopped
+    environment:
+      NYX_NATIVE_CHECKPOINT: /models/native.pt
+      OMP_NUM_THREADS: "4"
+    volumes:
+      - nyx_native_weights:/models
+      - nyx_native_corpus:/corpus
     networks: [nyx_internal]
 
   frontend:
@@ -52,3 +67,7 @@ volumes:
     name: nyx_memory
   nyx_voice:
     name: nyx_voice
+  nyx_native_weights:
+    name: nyx_native_weights
+  nyx_native_corpus:
+    name: nyx_native_corpus
