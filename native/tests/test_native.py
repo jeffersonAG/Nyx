@@ -1,4 +1,5 @@
 """Pruebas REALES de entrenamiento PyTorch, sin pesos Qwen ni datos privados."""
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,6 +7,7 @@ from pathlib import Path
 import torch
 
 from nyx_native.checkpoint import restore_model, load_checkpoint
+from nyx_native.curate import curate
 from nyx_native.dataset import load_corpus, sample_batch
 from nyx_native.inference import generate_text
 from nyx_native.model import ModelConfig, NativeTransformer
@@ -115,6 +117,33 @@ class NeuralNetworkTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 train(_arguments(base+["--checkpoint",str(parent),
                     "--continue-from",str(parent),"--steps","4"]))
+
+    def test_approved_corpus_builder_deduplicates_and_isolates_holdout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source=Path(tmp)/"data.jsonl"
+            data=[
+                {"approved":True,"question":f"Pregunta sobre procedimiento {n}",
+                 "answer":"Verificar datos y documentar resultados observables",
+                 "evidence":"Prueba registrada por el operador"}
+                for n in range(12)
+            ]
+            data.append(data[0])
+            data.append({"approved":False,"question":"No usar datos no aprobados",
+                         "answer":"Este ejemplo no está autorizado"})
+            source.write_text("\\n".join(json.dumps(row,ensure_ascii=False)
+                                        for row in data),encoding="utf-8")
+            output=Path(tmp)/"prepared"
+            result=curate(source,output,shards=3)
+            self.assertEqual(result["approved_examples"],12)
+            self.assertEqual(result["skipped_unapproved_or_duplicates"],2)
+            corpus=load_corpus(output,context=24)
+            self.assertEqual(corpus.documents,3)
+            self.assertTrue((output/"03_aprobados.txt").is_file())
+            self.assertNotIn("No usar datos no aprobados",
+                              "\\n".join(p.read_text(encoding="utf-8")
+                                for p in output.glob("*.txt")))
+            with self.assertRaises(ValueError):
+                curate(source,output,shards=3)
 
     def test_validate_prevents_invalid_large_config_and_bad_corpus(self):
         with self.assertRaises(ValueError):

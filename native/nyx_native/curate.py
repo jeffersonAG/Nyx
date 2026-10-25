@@ -20,7 +20,7 @@ def curate(input_file: Path, output_dir: Path, *,
         raise ValueError("El archivo JSONL de entrada debe existir y no ser un enlace.")
     if input_file.stat().st_size > 2_000_000:
         raise ValueError("El conjunto JSONL supera 2 MB.")
-    if output_dir.exists() and any(output_dir.iterdir()):
+    if output_dir.exists():
         raise ValueError("El directorio de salida contiene archivos; "
                          "utiliza otro nombre para preservar el corpus anterior.")
     items = []
