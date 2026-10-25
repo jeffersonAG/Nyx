@@ -53,3 +53,20 @@
 @media (max-width:1080px){.brain-content{grid-template-columns:1fr}.brain-list{max-height:none}}
 @media (max-width:680px){.brain-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
   .brain-form-grid{grid-template-columns:1fr}.brain-notebook{padding-top:16px}}
+
+/* Laboratorio PyTorch optativo, sin interferir con el chat habitual */
+.nyx-native-lab{margin:18px 0 26px;padding:19px;background:#191019;border:1px solid #77344e;
+  border-left:4px solid #e14c78;border-radius:6px;display:grid;gap:12px}
+.nyx-native-lab h3{margin:6px 0;font-size:17px;color:#f4d4df}
+.nyx-native-lab .brain-top>button{background:#281420;color:#e6afc1;
+  border:1px solid #71384d;border-radius:4px;padding:9px}
+.native-lab-info{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.native-lab-info span{background:#231320;border:1px solid #5a293e;
+  padding:10px;color:#bda0af;font-size:11px;overflow-wrap:anywhere}
+.native-lab-info strong{color:#f8cfdf}
+.native-lab-result{background:#100b12;border:1px solid #6e3550;border-radius:4px;padding:14px}
+.native-lab-result>strong{color:#ff97b7;font:11px 'Share Tech Mono',monospace}
+.native-lab-result pre{white-space:pre-wrap;overflow-wrap:anywhere;
+  color:#eee0e7;font:13px/1.6 'Share Tech Mono',monospace}
+.native-lab-result small{color:#bb96a8}
+@media(max-width:680px){.native-lab-info{grid-template-columns:1fr}}

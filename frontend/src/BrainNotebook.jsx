@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import './brain.css';
+import NativeLab from './NativeLab.jsx';
 
 const TYPES=[['experience','EXPERIENCIA'],['procedure','PROCEDIMIENTO'],['hypothesis','HIPÓTESIS']];
 const OUTCOMES=[['unknown','SIN EVALUAR'],['success','FUNCIONÓ'],['partial','PARCIAL'],['failure','FALLÓ']];
@@ -8,7 +9,7 @@ const EMPTY={kind:'experience',title:'',situation:'',action_taken:'',result:'',o
 const LINK={from_case_id:'',to_case_id:'',relation:'related_to',evidence:'',source_url:''};
 const RESULT={items:[],mode:'empty'};
 
-export default function BrainNotebook({api}) {
+export default function BrainNotebook({api, nativeAdmin = false, elevated = false}) {
   const [view,setView]=useState('cases');
   const [cases,setCases]=useState([]);
   const [relations,setRelations]=useState([]);
@@ -118,6 +119,7 @@ export default function BrainNotebook({api}) {
         <h2>Experiencias y aprendizaje verificable</h2></div>
       <span className="brain-version">COGNITIVE BRAIN v1</span>
     </header>
+    {nativeAdmin && <NativeLab api={api} elevated={elevated} />}
     <p className="muted">Aquí NYX conserva lo que ocurrió, lo que se intentó y cómo resultó.
       La evidencia siempre queda asociada al registro. Una experiencia declarada no demuestra por sí sola su exactitud
       y no reentrena los pesos de la red neuronal.</p>

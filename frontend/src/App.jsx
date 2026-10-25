@@ -957,7 +957,7 @@ export default function App() {
             {(tab === 'tasks' ? tasks : memories).length === 0 && <p className="muted">Sin registros por ahora.</p>}
           </div>
           {tab === 'tasks' && <CalendarPanel api={api} tasks={tasks}/>}
-          {tab === 'memory' && <BrainNotebook api={api}/>} 
+          {tab === 'memory' && <BrainNotebook api={api} nativeAdmin={auth.role === 'admin'} elevated={auth.elevated}/>} 
         </div>}
 
         {tab === 'memory' && <section className="nyx-knowledge-panel">
