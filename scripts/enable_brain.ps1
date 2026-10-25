@@ -35,7 +35,7 @@ try {
     $Remaining += "NYX_BRAIN_EMBED_MODEL=$Model"
     $Content = ($Remaining -join [Environment]::NewLine) + [Environment]::NewLine
     [System.IO.File]::WriteAllText($EnvPath, $Content,
-        (New-Object System.Text.UTF8Encoding($false)))
+        ([System.Text.UTF8Encoding]::new($false)))
     Write-Host "Configuración privada guardada en .env.brain."
 
     docker compose up -d --force-recreate api
