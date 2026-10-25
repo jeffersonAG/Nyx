@@ -125,7 +125,9 @@ export default function BrainNotebook({api}) {
       <div><small>EXPERIENCIAS</small><strong>{status?.cases??'—'}</strong></div>
       <div><small>RELACIONES</small><strong>{status?.relations??'—'}</strong></div>
       <div><small>RESPUESTAS EVALUADAS</small><strong>{status?.rated_answers??'—'}</strong></div>
-      <div><small>EMBEDDINGS</small><strong>{status?.embedding_model?'LOCAL':'OPCIONAL'}</strong></div>
+      <div><small>EMBEDDINGS</small><strong>{status?.embedding_model
+        ? status.embedding_model_installed ? 'DISPONIBLE' : 'NO INSTALADO'
+        : 'OPCIONAL'}</strong></div>
     </div>
     <div className="brain-tabs">
       {[['cases','EXPERIENCIAS'],['relations','RELACIONES'],['recall','RECUPERAR']].map(([id,label])=>
@@ -240,7 +242,7 @@ export default function BrainNotebook({api}) {
         <p className="muted">La búsqueda combina coincidencias léxicas en Python y vectores neuronales
           locales cuando se ha instalado un modelo de embeddings.</p>
         <div className="brain-index-status"><span>MODELO: {status?.embedding_model||'Sin configurar; búsqueda léxica'}</span>
-          {status?.embedding_model&&<button disabled={working} type="button" onClick={index}>INDIZAR 8 REGISTROS</button>}
+          {status?.embedding_model&&<button disabled={working||!status.embedding_model_installed} type="button" onClick={index}>INDIZAR 8 REGISTROS</button>}
         </div>
       </form>
       <div className="brain-list">

@@ -207,6 +207,35 @@ class BrainTests(unittest.TestCase):
         self.assertEqual(fallback["indexed"],0)
         self.assertEqual(fallback["remaining"],1)
 
+    def test_delete_feedback_and_vectors(self):
+        previous=storage.create_session("Consulta",self.admin)
+        storage.add_message("user","Revisar conectividad",previous["id"],self.admin)
+        msg=storage.add_message("assistant","Revisé conectividad",previous["id"],self.admin)
+        record=brain.record_feedback(self.admin,msg["id"],"helpful")
+        with storage.connect() as db:
+            db.execute("""INSERT INTO brain_vectors
+                (owner_id,item_kind,item_id,model,fingerprint,embedding_json)
+                VALUES(?,?,?,?,?,?)""",
+                (self.admin,"feedback",record["id"],"mock","hash","[]"))
+        self.assertFalse(brain.delete_feedback(self.other,msg["id"]))
+        self.assertTrue(brain.delete_feedback(self.admin,msg["id"]))
+        self.assertEqual(brain.metrics(self.admin)["cached_vectors"],0)
+        self.assertEqual(brain.list_feedback(self.admin),[])
+
+    def test_recommendations_respond_to_reported_failures(self):
+        self._case(kind="procedure",title="Corte de WiFi y PoE",
+            situation="WiFi sin red en laboratorio",
+            action_taken="Cambiar inyector PoE",outcome="success")
+        self._case(kind="procedure",title="Corte de WiFi y PoE",
+            situation="WiFi sin red en laboratorio",
+            action_taken="Reiniciar el enrutador",outcome="failure")
+        rank=brain.recommend_procedures("Problema WiFi PoE laboratorio",self.admin)
+        recs=rank["recommendations"]
+        self.assertEqual(len(recs),2)
+        self.assertIn("Cambiar inyector",recs[0]["procedure"])
+        self.assertFalse(rank["automatic_execution"])
+        self.assertLess(recs[0]["reported_success_estimate"],1.0)
+
     def test_no_embedded_remote_text_writes_to_weights(self):
         x=self._case(kind="hypothesis",title="Hipótesis de circuito RC",
              situation="Oscilación observada con un capacitor",

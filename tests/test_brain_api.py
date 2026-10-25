@@ -133,6 +133,21 @@ class BrainApiTests(unittest.TestCase):
         self.assertEqual(replaced.json()["rating"],"helpful")
         self.assertEqual(len(self.admin.get("/api/brain/feedback").json()),1)
 
+    def test_delete_session_erases_brain_traces(self):
+        saved=self.admin.post("/api/chat",json={
+            "text":"Crea una tarea para comprobar red"}).json()
+        session_id=saved["session_id"]
+        msg_id=saved["message"]["id"]
+        self.admin.post("/api/brain/feedback",json={
+            "assistant_message_id":msg_id,"rating":"helpful"})
+        self.assertEqual(len(self.admin.get("/api/brain/feedback").json()),1)
+        self.assertEqual(len(self.admin.get("/api/brain/cases").json()),1)
+        removed=self.admin.delete("/api/sessions/"+str(session_id))
+        self.assertEqual(removed.status_code,204)
+        self.assertEqual(self.admin.get("/api/brain/feedback").json(),[])
+        self.assertEqual(self.admin.get("/api/brain/cases").json(),[])
+        self.assertEqual(self.admin.get("/api/brain/status").json()["cached_vectors"],0)
+
     def test_search_recommend_and_csrf(self):
         self.add_case(self.admin)
         self.add_case(self.admin,title="Otra intervención en el router")

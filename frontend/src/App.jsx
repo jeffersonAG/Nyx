@@ -519,6 +519,20 @@ export default function App() {
     finally { setRatingBusy(false); }
   }
 
+  async function removeRating(message) {
+    if (ratingBusy || !brainRatings[message.id]) return;
+    setRatingBusy(true);setError('');
+    try {
+      await api('/api/brain/feedback/' + message.id, { method:'DELETE' });
+      setBrainRatings(previous => {
+        const next = { ...previous };
+        delete next[message.id];
+        return next;
+      });
+    } catch (err) { setError(err.message); }
+    finally { setRatingBusy(false); }
+  }
+
   async function send(event) {
     event.preventDefault();
     const text = draft.trim();
@@ -818,7 +832,11 @@ export default function App() {
                     aria-pressed={brainRatings[m.id]?.rating === 'unhelpful'}
                     className={brainRatings[m.id]?.rating === 'unhelpful' ? 'rated negative' : ''}
                     disabled={ratingBusy} onClick={() => rateReply(m, 'unhelpful')}>✕ CORREGIR</button>
-                  {brainRatings[m.id] && <span>VALORACIÓN GUARDADA · AYUDA A MEJORAR FUTURAS RESPUESTAS</span>}
+                  {brainRatings[m.id] && <>
+                    <span>VALORACIÓN GUARDADA · AYUDA A MEJORAR FUTURAS RESPUESTAS</span>
+                    <button type="button" disabled={ratingBusy} onClick={() => removeRating(m)}
+                      title="Retirar valoración del sistema cognitivo">↶ RETIRAR</button>
+                  </>}
                 </div>}
               </div>
             </div>)}
