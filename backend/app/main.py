@@ -107,6 +107,13 @@ class VoiceRequest(BaseModel):
     mode: str = Field(default="conversation", pattern="^(conversation|system)$")
 
 
+class NativePromptRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=1500)
+    max_new_tokens: int = Field(default=64, ge=1, le=128)
+    temperature: float = Field(default=0.9, ge=0.1, le=2)
+    seed: int | None = Field(default=None, ge=0, le=2147483647)
+
+
 class BrainCaseRequest(BaseModel):
     kind: str = Field(pattern="^(experience|procedure|hypothesis)$")
     title: str = Field(min_length=3, max_length=150)
@@ -484,6 +491,64 @@ async def chat(request: ChatRequest, user: security.Principal = Depends(_princip
             )
     return {"reply": reply, "message": saved, "session_id": sid, "tool_events": events}
 
+
+
+
+# Experimentos con una red ENTRENADA DESDE CERO; jamás reemplazan
+# automáticamente la conversación normal protegida por Security Sentinel.
+NATIVE_URL = "http://native:8010"  # Host interno fijo de Docker.
+
+
+@app.get("/api/native/status")
+async def native_status(user: security.Principal = Depends(require_admin)):
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(3.0, connect=2.0),
+            follow_redirects=False,
+        ) as client:
+            response = await client.get(NATIVE_URL + "/health")
+            response.raise_for_status()
+            details = response.json()
+        return {"service_running": True, **details,
+                "primary_model_unchanged": True}
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError, KeyError):
+        return {"service_running": False, "ready": False,
+                "primary_model_unchanged": True,
+                "reason": "El laboratorio nativo no está iniciado."}
+
+
+@app.post("/api/native/generate")
+async def native_generate(
+    request: NativePromptRequest,
+    user: security.Principal = Depends(require_elevated),
+):
+    # No existe ruta para acceder a herramientas, cuentas o sistemas externos.
+    # El modelo experimental sólo recibe el prompt autorizado por administración.
+    if sentinel.sensitive_creator_request(request.text) or creator_question(request.text):
+        raise HTTPException(status_code=403,
+                            detail="La privacidad se aplica también al modelo experimental.")
+    status = await native_status(user)
+    if not status.get("ready"):
+        raise HTTPException(status_code=409,
+                            detail="Entrena y activa el laboratorio de red neuronal propia.")
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(120.0, connect=3.0),
+            follow_redirects=False,
+        ) as client:
+            response = await client.post(NATIVE_URL + "/generate",
+                                         json=request.model_dump())
+            response.raise_for_status()
+            result = response.json()
+        return {"text": str(result.get("text", ""))[:2500],
+                "step": result.get("step"),
+                "parameters": result.get("parameters"),
+                "experiment": True,
+                "primary_model_unchanged": True,
+                "note": "Texto del Transformer propio; no se verifica su exactitud."}
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError, KeyError) as exc:
+        raise HTTPException(status_code=503,
+                            detail="No fue posible obtener una respuesta del laboratorio nativo.") from exc
 
 
 @app.get("/api/brain/status")
