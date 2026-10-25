@@ -1,3 +1,5 @@
+> **NYX 0.7.0 — Red neuronal propia en PyTorch (alfa experimental):** modelo Transformer original entrenable desde cero, pesos propios, entrenamiento/adaptación explícitos y pruebas reales de gradientes. El chat cotidiano con Qwen no se reemplaza. [Guía de instalación y entrenamiento](docs/NYX_NATIVE_0_7.md).
+
 > **NYX 0.6.0 — Cognitive Brain v1:** motor de recuperación semántica optativa, experiencias y procedimientos evaluados, relaciones con evidencia y feedback real de respuestas. Consulta [docs/COGNITIVE_BRAIN_0_6.md](docs/COGNITIVE_BRAIN_0_6.md). La rama principal continúa sin modificarse.
 
 > **NYX 0.5.0 (rama de desarrollo):** núcleo funcional mejorado, divisas, consultas web explícitas, calendario y memoria de investigación por usuario. Consulta [docs/NYX_0_5.md](docs/NYX_0_5.md) para instrucciones, pruebas y limitaciones. La versión 0.4.2 continúa disponible en el historial de Git.

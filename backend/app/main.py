@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from . import cognition, security, sentinel, storage, network, brain
 
-app = FastAPI(title="NYX 0.6.0", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="NYX 0.7.0", docs_url=None, redoc_url=None, openapi_url=None)
 OLLAMA_URL = os.environ.get("NYX_OLLAMA_URL", "http://ollama:11434").rstrip("/")
 MODEL = os.environ.get("NYX_MODEL", "nyx:0.4")
 VOICE_PATH = Path(os.environ.get("NYX_VOICE_PATH", "/voices"))
@@ -397,9 +397,9 @@ async def status(user: security.Principal = Depends(_principal)):
             res = await client.get(f"{OLLAMA_URL}/api/tags")
             res.raise_for_status()
             models = [x.get("name", "") for x in res.json().get("models", [])]
-        return {"online": MODEL in models, "ollama": True, "model": MODEL, "version": "0.6.0"}
+        return {"online": MODEL in models, "ollama": True, "model": MODEL, "version": "0.7.0"}
     except (httpx.RequestError, httpx.HTTPStatusError, ValueError):
-        return {"online": False, "ollama": False, "model": MODEL, "version": "0.6.0"}
+        return {"online": False, "ollama": False, "model": MODEL, "version": "0.7.0"}
 
 
 @app.get("/api/sessions")
