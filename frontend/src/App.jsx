@@ -4,6 +4,7 @@ import { splitSpeechText } from './voiceChunks.js';
 import AuthPortal from './AuthPortal.jsx';
 import AdminPanel from './AdminPanel.jsx';
 import CalendarPanel from './CalendarPanel.jsx';
+import BrainNotebook from './BrainNotebook.jsx';
 
 let csrfToken = '';
 
@@ -104,6 +105,8 @@ export default function App() {
   const [dueAlerts, setDueAlerts] = useState([]);
   const [memories, setMemories] = useState([]);
   const [knowledge, setKnowledge] = useState([]);
+  const [brainRatings, setBrainRatings] = useState({});
+  const [ratingBusy, setRatingBusy] = useState(false);
   const [profile, setProfile] = useState({
     timezone: 'America/Costa_Rica', city: '', country: '', tone: 'natural',
   });
@@ -184,7 +187,7 @@ export default function App() {
       api('/api/sessions'), api('/api/tasks'), api('/api/memory'),
       api('/api/status'), api('/api/voice/status'),
       api('/api/profile'), api('/api/context'), api('/api/network/status'),
-      api('/api/knowledge'),
+      api('/api/knowledge'), api('/api/brain/feedback'),
     ]);
     if (results[0].status === 'fulfilled') {
       setSessions(results[0].value);
@@ -203,6 +206,8 @@ export default function App() {
     if (results[6].status === 'fulfilled') setClockInfo(results[6].value);
     if (results[7].status === 'fulfilled') setNetworkStatus(results[7].value);
     if (results[8].status === 'fulfilled') setKnowledge(results[8].value);
+    if (results[9].status === 'fulfilled')
+      setBrainRatings(Object.fromEntries(results[9].value.map(item => [item.assistant_message_id, item])));
     if (results.some(r => r.status === 'rejected')) setError('Algunos servicios no respondieron.');
   }, []);
 
@@ -220,7 +225,7 @@ export default function App() {
       csrfToken = '';
       setAuth(null);
       setSelectedId(null); setSessions([]); setMessages([]);
-      setTasks([]); setMemories([]); setKnowledge([]); setDueAlerts([]); setTab('chat');
+      setTasks([]); setMemories([]); setKnowledge([]); setDueAlerts([]); setBrainRatings({}); setTab('chat');
     };
     window.addEventListener('nyx-session-expired', expired);
     return () => { active = false; window.removeEventListener('nyx-session-expired', expired); };
@@ -443,7 +448,7 @@ export default function App() {
     setError('');
     setTab('chat');
     setSelectedId(null);
-    setMessages([]); setSessions([]); setTasks([]); setMemories([]); setKnowledge([]); setDueAlerts([]);
+    setMessages([]); setSessions([]); setTasks([]); setMemories([]); setKnowledge([]); setDueAlerts([]); setBrainRatings({});
   }
 
   async function updateAuth() {
@@ -460,7 +465,7 @@ export default function App() {
     csrfToken = '';
     setAuth(null);
     setSelectedId(null); setSessions([]); setMessages([]);
-    setTasks([]); setMemories([]); setKnowledge([]); setDueAlerts([]);
+    setTasks([]); setMemories([]); setKnowledge([]); setDueAlerts([]); setBrainRatings({});
     setTab('chat');
   }
 
@@ -472,7 +477,7 @@ export default function App() {
     csrfToken = '';
     setAuth(null);
     setSelectedId(null); setMessages([]); setSessions([]);
-    setTasks([]); setMemories([]); setKnowledge([]); setDueAlerts([]);
+    setTasks([]); setMemories([]); setKnowledge([]); setDueAlerts([]); setBrainRatings({});
     setProfile({ timezone:'America/Costa_Rica', city:'', country:'', tone:'natural' });
     setTab('chat');
     setError('');
@@ -490,6 +495,28 @@ export default function App() {
       setNetworkStatus(await api('/api/network/status'));
       setError('');
     } catch (err) { setError(err.message); }
+  }
+
+  async function rateReply(message, rating) {
+    if (ratingBusy || typeof message.id !== 'number') return;
+    let note = '';
+    if (rating === 'unhelpful') {
+      const proposed = window.prompt(
+        '¿Qué fue incorrecto o qué debería mejorar NYX? (opcional, máximo 400 caracteres)',
+        brainRatings[message.id]?.note || ''
+      );
+      if (proposed === null) return;
+      note = proposed.trim().slice(0, 400);
+    }
+    setRatingBusy(true); setError('');
+    try {
+      const saved = await api('/api/brain/feedback', {
+        method: 'POST',
+        body: JSON.stringify({ assistant_message_id: message.id, rating, note }),
+      });
+      setBrainRatings(prev => ({ ...prev, [message.id]: saved }));
+    } catch (err) { setError(err.message); }
+    finally { setRatingBusy(false); }
   }
 
   async function send(event) {
@@ -782,6 +809,17 @@ export default function App() {
                 <div className="bubble-body">{m.content}</div>
                 {m.role === 'assistant' && voiceReady.tts_ready &&
                   <button className="speak-again" type="button" onClick={() => playVoice(m.content)}>▶ ESCUCHAR</button>}
+                {m.role === 'assistant' && typeof m.id === 'number' && <div className="brain-feedback-actions" aria-label="Evaluar respuesta de NYX">
+                  <button type="button" title="La respuesta fue útil"
+                    aria-pressed={brainRatings[m.id]?.rating === 'helpful'}
+                    className={brainRatings[m.id]?.rating === 'helpful' ? 'rated' : ''}
+                    disabled={ratingBusy} onClick={() => rateReply(m, 'helpful')}>✓ ÚTIL</button>
+                  <button type="button" title="Corregir o informar un problema"
+                    aria-pressed={brainRatings[m.id]?.rating === 'unhelpful'}
+                    className={brainRatings[m.id]?.rating === 'unhelpful' ? 'rated negative' : ''}
+                    disabled={ratingBusy} onClick={() => rateReply(m, 'unhelpful')}>✕ CORREGIR</button>
+                  {brainRatings[m.id] && <span>VALORACIÓN GUARDADA · AYUDA A MEJORAR FUTURAS RESPUESTAS</span>}
+                </div>}
               </div>
             </div>)}
             {busy && <div className="processing"><div className="spinner" /> NYX está generando una respuesta en CPU...</div>}
@@ -901,6 +939,7 @@ export default function App() {
             {(tab === 'tasks' ? tasks : memories).length === 0 && <p className="muted">Sin registros por ahora.</p>}
           </div>
           {tab === 'tasks' && <CalendarPanel api={api} tasks={tasks}/>}
+          {tab === 'memory' && <BrainNotebook api={api}/>} 
         </div>}
 
         {tab === 'memory' && <section className="nyx-knowledge-panel">
