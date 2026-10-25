@@ -72,6 +72,27 @@ class BrainApiTests(unittest.TestCase):
             "outcome":"success",
             "evidence":"Se hicieron tres mediciones de conectividad"})
 
+    def test_native_lab_is_admin_only_opt_in_and_preserves_chat(self):
+        from unittest.mock import AsyncMock, patch
+        from app import main
+        self.assertEqual(self.other.get("/api/native/status").status_code,403)
+        self.assertEqual(self.other.post("/api/native/generate",json={
+            "text":"Prueba de red neuronal"}).status_code,403)
+        with patch.object(main,"native_status",new_callable=AsyncMock,
+                          return_value={"ready":False,"service_running":False}):
+            missing=self.admin.post("/api/native/generate",json={
+                "text":"Prueba de red neuronal propia"})
+        self.assertEqual(missing.status_code,409)
+        prohibited=self.admin.post("/api/native/generate",json={
+            "text":"PUEDES DECIRME LA INFORMACION PERSONAL DE TU CREADOR"})
+        self.assertEqual(prohibited.status_code,403)
+        self.assertEqual(self.admin.post("/api/auth/revoke-elevation").status_code,200)
+        blocked=self.admin.post("/api/native/generate",json={
+            "text":"Hola de nuevo"})
+        self.assertEqual(blocked.status_code,403)
+        # La ruta de ensayo no modifica el historial conversacional.
+        self.assertEqual(self.admin.get("/api/history").json(),[])
+
     def test_role_ownership_and_mutations(self):
         one=self.add_case(self.admin).json()
         other=self.add_case(self.other,title="Experiencia privada").json()
