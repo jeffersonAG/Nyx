@@ -7,6 +7,7 @@ Asistente local para Windows 11 (Ryzen 5 4600G, 16 GB RAM), diseñado para crece
 - **Bitácora por sesiones:** nueva conversación, selección, búsqueda, cambio de título, eliminación y exportación TXT. Los mensajes previos de 0.1 se migran sin borrarlos.
 - **Modelo local:** Qwen2.5 3B con identidad personalizada nyx:0.2. La información del creador no aparece en interfaz ni saludos; solo se responde cuando se pregunta explícitamente.
 - **Memoria explícita y tareas:** SQLite persistente con volumen Docker independiente.
+- **Lectura completa:** respuestas largas se sintetizan en segmentos (máximo 850 caracteres por solicitud), se reproducen en orden, incluyen indicador `LECTURA x/y` y admiten interrupción inmediata. Se precarga el siguiente segmento mientras se reproduce el actual.
 - **Voz LOCAL optativa:** Piper, voz masculina española davefx-medium (modelo CC0), con modo natural y procesamiento de alertas mediante Web Audio. La onda se alimenta de la señal real reproducida o capturada.
 - **Micrófono local optativo:** Vosk modelo pequeño en español; se activa manualmente, transcribe localmente y pone el texto reconocido en el editor para revisión (no lo envía automáticamente).
 - **Respaldo:** volúmenes de modelos, memoria y voz; se preservan fuera de GitHub.

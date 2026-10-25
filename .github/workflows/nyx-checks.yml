@@ -22,6 +22,7 @@ jobs:
         run: |
           cd frontend
           npm install --no-audit --no-fund
+          node --test src/voiceChunks.test.js
           npm run build
       - name: Validate compose
         run: docker compose config --quiet

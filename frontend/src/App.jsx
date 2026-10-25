@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './styles.css';
+import { splitSpeechText } from './voiceChunks.js';
 
 const MENU = [
   { id: 'chat', icon: '◇', label: 'CONVERSACIÓN' },
@@ -101,6 +102,8 @@ export default function App() {
   const analyserRef = useRef(null);
   const audioCtxRef = useRef(null);
   const currentSourceRef = useRef(null);
+  const voiceJobRef = useRef({ id: 0, abort: null });
+  const [voiceProgress, setVoiceProgress] = useState({ current: 0, total: 0 });
   const recorderRef = useRef(null);
   const micStreamRef = useRef(null);
   const micCtxRef = useRef(null);
@@ -176,6 +179,7 @@ export default function App() {
   }, [voiceState, tab, rightOpen]);
 
   useEffect(() => () => {
+    voiceJobRef.current.abort?.abort();
     currentSourceRef.current?.stop?.();
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
     micStreamRef.current?.getTracks().forEach(track => track.stop());
@@ -195,33 +199,24 @@ export default function App() {
   }
 
   function stopVoice() {
+    voiceJobRef.current.id += 1;
+    voiceJobRef.current.abort?.abort();
+    voiceJobRef.current.abort = null;
     if (currentSourceRef.current) {
-      try { currentSourceRef.current.stop(); } catch { /* ya finalizó */ }
+      try { currentSourceRef.current.stop(); } catch { /* ya terminó */ }
       currentSourceRef.current = null;
     }
     analyserRef.current = null;
+    setVoiceProgress({ current: 0, total: 0 });
     setVoiceState('idle');
   }
 
-  async function playVoice(text, mode = 'conversation') {
-    if (!voiceReady.tts_ready) {
-      setError('Instala primero el modelo Piper para utilizar la voz local.');
-      return;
-    }
-    try {
-      stopVoice();
-      const ctx = ensureAudio();
-      setVoiceState('processing');
-      const response = await fetch('/api/voice/speak', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text.slice(0, 1400), mode }),
-      });
-      if (!response.ok) {
-        const json = await response.json();
-        throw new Error(json.detail || 'No se pudo generar el audio');
+  function playBuffer(ctx, audio, mode, jobId) {
+    return new Promise((resolve) => {
+      if (voiceJobRef.current.id !== jobId) {
+        resolve();
+        return;
       }
-      const data = await response.arrayBuffer();
-      const audio = await ctx.decodeAudioData(data);
       const source = ctx.createBufferSource();
       source.buffer = audio;
       const analyser = ctx.createAnalyser();
@@ -229,32 +224,99 @@ export default function App() {
       const master = ctx.createGain();
       master.gain.value = 0.9;
       if (mode === 'system' && voiceProfile === 'hybrid') {
-        // Una copia retardada y filtrada da una textura electronica suave.
         const lowpass = ctx.createBiquadFilter();
-        lowpass.type = 'lowpass'; lowpass.frequency.value = 2600;
-        const delay = ctx.createDelay(0.2); delay.delayTime.value = 0.038;
-        const echo = ctx.createGain(); echo.gain.value = 0.15;
+        lowpass.type = 'lowpass';
+        lowpass.frequency.value = 2600;
+        const delay = ctx.createDelay(0.2);
+        delay.delayTime.value = 0.038;
+        const echo = ctx.createGain();
+        echo.gain.value = 0.15;
         source.connect(master);
-        source.connect(lowpass); lowpass.connect(delay); delay.connect(echo); echo.connect(master);
+        source.connect(lowpass);
+        lowpass.connect(delay);
+        delay.connect(echo);
+        echo.connect(master);
       } else {
         source.connect(master);
       }
-      master.connect(analyser); analyser.connect(ctx.destination);
+      master.connect(analyser);
+      analyser.connect(ctx.destination);
       currentSourceRef.current = source;
       analyserRef.current = analyser;
       source.onended = () => {
         if (currentSourceRef.current === source) {
           currentSourceRef.current = null;
           analyserRef.current = null;
-          setVoiceState('idle');
         }
+        resolve();
       };
       source.start();
       setVoiceState('speaking');
+    });
+  }
+
+  async function playVoice(text, mode = 'conversation') {
+    if (!voiceReady.tts_ready) {
+      setError('Instala primero el modelo Piper para utilizar la voz local.');
+      return;
+    }
+    stopVoice();
+    const fragments = splitSpeechText(text);
+    if (!fragments.length) return;
+    const jobId = voiceJobRef.current.id;
+    const controller = new AbortController();
+    voiceJobRef.current.abort = controller;
+    setVoiceProgress({ current: 0, total: fragments.length });
+    setVoiceState('processing');
+
+    try {
+      const ctx = ensureAudio();
+      // Los rechazos de la siguiente descarga quedan capturados antes de empezar
+      // a reproducir el fragmento actual; así no hay promesas sin controlar.
+      const synthesize = async (fragment) => {
+        try {
+          const response = await fetch('/api/voice/speak', {
+            method: 'POST',
+            signal: controller.signal,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: fragment, mode }),
+          });
+          if (!response.ok) {
+            let detail = 'Fallo del sintetizador de voz (' + response.status + ')';
+            try { detail = (await response.json()).detail || detail; } catch { /* sin JSON */ }
+            throw new Error(detail);
+          }
+          const bytes = await response.arrayBuffer();
+          return { audio: await ctx.decodeAudioData(bytes) };
+        } catch (error) {
+          return { error };
+        }
+      };
+
+      let upcoming = synthesize(fragments[0]);
+      for (let index = 0; index < fragments.length; index++) {
+        const result = await upcoming;
+        if (voiceJobRef.current.id !== jobId || controller.signal.aborted) break;
+        if (result.error) throw result.error;
+        upcoming = index + 1 < fragments.length
+          ? synthesize(fragments[index + 1])
+          : Promise.resolve(null);
+        setVoiceProgress({ current: index + 1, total: fragments.length });
+        await playBuffer(ctx, result.audio, mode, jobId);
+        if (voiceJobRef.current.id !== jobId || controller.signal.aborted) break;
+      }
     } catch (err) {
-      analyserRef.current = null;
-      setVoiceState('idle');
-      setError(err.message);
+      if (!controller.signal.aborted && voiceJobRef.current.id === jobId) {
+        setError('La lectura se interrumpió: ' + err.message);
+      }
+    } finally {
+      if (voiceJobRef.current.id === jobId) {
+        voiceJobRef.current.abort = null;
+        analyserRef.current = null;
+        currentSourceRef.current = null;
+        setVoiceProgress({ current: 0, total: 0 });
+        setVoiceState('idle');
+      }
     }
   }
 
@@ -276,6 +338,7 @@ export default function App() {
     if (voiceEnabled && voiceReady.tts_ready) {
       try { ensureAudio(); } catch (err) { setError(err.message); }
     }
+    stopVoice();
     setDraft(''); setBusy(true); setError('');
     const sessionAtSend = selectedId;
     setMessages(prev => [...prev, {
@@ -290,7 +353,7 @@ export default function App() {
       setSelectedId(data.session_id);
       setMessages(await api('/api/sessions/' + data.session_id + '/messages'));
       await refreshSessions();
-      if (voiceEnabled && voiceReady.tts_ready) await playVoice(data.reply);
+      if (voiceEnabled && voiceReady.tts_ready) void playVoice(data.reply);
       else setVoiceState('idle');
     } catch (err) {
       setVoiceState('idle');
@@ -513,7 +576,9 @@ export default function App() {
           </div>
           <div className="voice-strip">
             <div className="voice-meta"><span>▥ VOICE CHANNEL / {voiceState.toUpperCase()}</span>
-              <span>{voiceReady.tts_ready ? 'PIPER LOCAL' : 'PIPER PENDIENTE'}</span></div>
+              <span>{voiceProgress.total > 0
+                ? 'LECTURA ' + voiceProgress.current + '/' + voiceProgress.total
+                : voiceReady.tts_ready ? 'PIPER LOCAL' : 'PIPER PENDIENTE'}</span></div>
             <canvas ref={waveRef} width="960" height="74" aria-label="Forma de onda del audio capturado o reproducido" />
           </div>
           <div className="compose-area">
@@ -538,7 +603,7 @@ export default function App() {
                 disabled={!voiceReady.tts_ready}
                 onChange={e => { setVoiceEnabled(e.target.checked); if (!e.target.checked) stopVoice(); }} />
                 RESPUESTAS HABLADAS</label>
-              <div><button type="button" onClick={stopVoice} disabled={voiceState !== 'speaking'}>■ DETENER VOZ</button>
+              <div><button type="button" onClick={stopVoice} disabled={voiceProgress.total === 0}>■ DETENER VOZ</button>
                 <span>ENTER: ENVIAR · SHIFT+ENTER: SALTO</span></div>
             </div>
           </div>
