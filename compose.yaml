@@ -10,9 +10,7 @@ services:
     volumes:
       - nyx_models:/root/.ollama
       - ./Modelfile:/config/Modelfile:ro
-    networks:
-      - nyx_internal
-    # Ollama no se expone al exterior.
+    networks: [nyx_internal]
 
   api:
     build:
@@ -20,14 +18,14 @@ services:
     restart: unless-stopped
     environment:
       NYX_OLLAMA_URL: http://ollama:11434
-      NYX_MODEL: nyx:0.1
+      NYX_MODEL: nyx:0.2
       NYX_DB_PATH: /data/nyx.db
+      NYX_VOICE_PATH: /voices
     volumes:
       - nyx_memory:/data
-    depends_on:
-      - ollama
-    networks:
-      - nyx_internal
+      - nyx_voice:/voices
+    depends_on: [ollama]
+    networks: [nyx_internal]
 
   frontend:
     build:
@@ -35,10 +33,8 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:80"
-    depends_on:
-      - api
-    networks:
-      - nyx_internal
+    depends_on: [api]
+    networks: [nyx_internal]
 
 networks:
   nyx_internal:
@@ -49,3 +45,5 @@ volumes:
     name: nyx_models
   nyx_memory:
     name: nyx_memory
+  nyx_voice:
+    name: nyx_voice

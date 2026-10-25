@@ -1,63 +1,91 @@
-# NYX 0.1 — Crimson System
+# NYX 0.2 — Crimson Intelligence System
 
-Primera version experimental portable del asistente NYX: Ollama + Qwen2.5 3B, FastAPI, SQLite y React. Diseno negro/grafito/carmesi inspirado en el portafolio V2.
+Asistente local para Windows 11 (Ryzen 5 4600G, 16 GB RAM), diseñado para crecer hacia otros equipos y servidores. La rama 0.2 conserva los archivos originales y la arquitectura Docker 0.1.
+
+## Funciones implementadas
+- **Interfaz Crimson 2.0:** paneles de terminal negra y carmesí, núcleo animado que refleja el estado real del asistente, contexto lateral, adaptación a móvil y modo reducido de animaciones.
+- **Bitácora por sesiones:** nueva conversación, selección, búsqueda, cambio de título, eliminación y exportación TXT. Los mensajes previos de 0.1 se migran sin borrarlos.
+- **Modelo local:** Qwen2.5 3B con identidad personalizada nyx:0.2. La información del creador no aparece en interfaz ni saludos; solo se responde cuando se pregunta explícitamente.
+- **Memoria explícita y tareas:** SQLite persistente con volumen Docker independiente.
+- **Voz LOCAL optativa:** Piper, voz masculina española davefx-medium (modelo CC0), con modo natural y procesamiento de alertas mediante Web Audio. La onda se alimenta de la señal real reproducida o capturada.
+- **Micrófono local optativo:** Vosk modelo pequeño en español; se activa manualmente, transcribe localmente y pone el texto reconocido en el editor para revisión (no lo envía automáticamente).
+- **Respaldo:** volúmenes de modelos, memoria y voz; se preservan fuera de GitHub.
+
+No incluye clonación de voz ni imitación exacta de ningún actor. No se ha entrenado desde cero el modelo Qwen: Modelfile define instrucciones, no pesos nuevos.
 
 ## Requisitos
-- Windows 11 con Docker Desktop y WSL 2, o Linux con Docker Compose.
-- 16 GB RAM recomendados para pruebas CPU con Ryzen 5 4600G.
-- Internet para descargar imagenes y modelo por primera vez; inferencia local despues.
+- Windows 11, Docker Desktop + WSL 2. También Linux con Compose.
+- RAM de Docker suficiente; se probará en CPU. Los modelos de voz se cargan bajo demanda.
+- Acceso a Internet durante la descarga inicial de imágenes y modelos.
 
-## Instalacion
-Desde PowerShell en la raiz del repositorio:
+## Actualizar desde NYX 0.1 SIN PERDER EL HISTORIAL
 
-    docker --version
-    docker compose version
-    docker compose up -d --build
-    docker compose exec ollama ollama pull qwen2.5:3b
-    docker compose exec ollama ollama create nyx:0.1 -f /config/Modelfile
-
-Abrir http://localhost:3000 en el mismo equipo. La primera respuesta en CPU puede tardar. Probar consola con:
-
-    docker compose exec ollama ollama run nyx:0.1
-
-Revisar estado:
-
-    docker compose ps
-    docker compose logs -f api
-
-Tras modificar Modelfile, volver a ejecutar el comando ollama create.
-
-## Alcance implementado
-- Chat local con Qwen, historial de mensajes en SQLite.
-- Tareas y notas guardadas expresamente, sin acciones autonomas.
-- UI Crimson en React (negro #000000, gris #1E1E1E, carmesi #DC143C).
-- Vista previa opcional de lectura de respuestas con la voz del navegador.
-- Persistencia y respaldo de modelos y memoria mediante volumenes Docker.
-
-## Pendiente
-- Voz natural local con Piper TTS y modo metalico para alertas.
-- Reconocimiento offline del microfono.
-- Instalador de escritorio Tauri/Electron.
-- Entrenamiento o fine-tuning y acciones sobre sistemas externos.
-
-ATENCION: la vista previa de voz del navegador no garantiza operacion totalmente offline ni la voz final hibrida. Modelfile cambia configuracion de Qwen, NO entrena pesos nuevos.
-
-## Datos y portabilidad
-- nyx_models: archivos de Ollama (incluye modelos descargados).
-- nyx_memory: SQLite con historial, tareas y recuerdos explicitamente guardados.
-- Codigo: repositorio GitHub.
-
-El Ollama instalado previamente en Windows y el de Docker tienen almacenamientos distintos. No desinstales aun Ollama para Windows; comprueba primero el contenedor.
-
-Respaldar y restaurar desde PowerShell:
+**Haz una copia primero:**
 
     .\scripts\backup.ps1
-    .\scripts\restore.ps1 -BackupFolder ".\backups\nyx-AAAAMMDD-HHMMSS" -Overwrite
+
+El respaldo detiene momentáneamente los servicios. Conviene copiar la carpeta backups/ a almacenamiento externo protegido. NO publiques respaldos, voces ni bases de datos en GitHub.
+
+Para cambiar de rama desde la copia local del repositorio:
+
+    git fetch origin
+    git switch feature/nyx-0.2-crimson
+
+Comprueba los cambios y arranca:
+
     docker compose up -d --build
+    docker compose exec ollama ollama create nyx:0.2 -f /config/Modelfile
+    docker compose ps
 
-La restauracion reemplaza la informacion existente; guarda respaldo primero. No publiques archivos de memoria ni respaldos en GitHub. Nunca utilices docker compose down -v si deseas conservar volumenes.
+Abre **http://localhost:3000**.
 
-## Seguridad
-La interfaz solo se publica en 127.0.0.1:3000. No hay autenticacion: no expongas NYX a Internet ni a la red local. El modelo no puede ejecutar comandos del equipo.
+El modelo base qwen2.5:3b ya instalado en el volumen nyx_models se reutiliza; si no está presente:
 
-Se conservan el main.py y nyx_core originales, asi como Documentacion/. Consulta docs/ARQUITECTURA.md.
+    docker compose exec ollama ollama pull qwen2.5:3b
+    docker compose exec ollama ollama create nyx:0.2 -f /config/Modelfile
+
+**Nota:** la migración SQL se ejecuta al iniciar el API y agrupa los mensajes antiguos en "Conversaciones anteriores (0.1)" de forma que los registros se conserven.
+
+## Activar voz natural, alertas robotizadas y micrófono
+
+Instala las voces de forma expresa, una sola vez:
+
+    docker compose exec api python -m app.voice_setup
+
+O individualmente:
+
+    docker compose exec api python -m app.voice_setup --tts
+    docker compose exec api python -m app.voice_setup --stt
+
+- TTS: Piper es_ES-davefx-medium (aprox. 63 MB, voz masculina de España).
+- STT: Vosk vosk-model-small-es-0.42 (aprox. 39 MB comprimido).
+- No se envía el audio a servicios externos; solo se usa Internet para descargar modelos.
+- Los archivos descargados se guardan en nyx_voice.
+- Tras instalar, pulsa **SINCRONIZAR** en la interfaz para actualizar el estado. En Configuración puedes probar la voz y una alerta.
+
+**Flujo:** botón de micrófono → captura con permiso del navegador → audio WAV local → Vosk → texto editable → envío explícito → Ollama → texto → Piper → reproducción → onda real.
+
+**Importante:** Piper y Vosk son software de terceros con licencias independientes. Piper-tts se distribuye bajo GPL-3.0 o posterior; el dataset de la voz davefx figura como CC0. Considera las obligaciones de licencia antes de redistribuir el programa.
+
+## Privacidad y seguridad
+
+- Solo expuesto en localhost:3000. NO publicar el servicio a Internet sin autenticación.
+- El micrófono requiere autorización del navegador y está desactivado por defecto.
+- No existe escucha permanente ni automatización de comandos del sistema.
+- Los datos privados están en volúmenes Docker, ignorados por Git.
+- El contenido de los recuerdos no debe incluir contraseñas ni credenciales.
+- Para conservar los datos, NO ejecutes docker compose down -v.
+- Los archivos históricos originales permanecen intactos.
+
+## Verificación
+
+En Windows 11:
+
+    docker compose ps
+    docker compose logs --tail=80 api
+
+Pruebas Python (desde la raíz, con FastAPI y httpx disponibles):
+
+    python -m unittest discover -s tests -v
+
+La compilación completa y la calidad/performance de las voces deben validarse en el Ryzen 5 real antes de fusionar a main. Consulta docs/ARQUITECTURA.md.

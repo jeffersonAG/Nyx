@@ -1,283 +1,679 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import './styles.css';
 
-const NAV = [
-  ['chat', '⌘', 'CONVERSACIÓN'],
-  ['tasks', '☷', 'TAREAS'],
-  ['memory', '▤', 'MEMORIA'],
-  ['history', '◷', 'HISTORIAL'],
+const MENU = [
+  { id: 'chat', icon: '◇', label: 'CONVERSACIÓN' },
+  { id: 'history', icon: '◷', label: 'BITÁCORA' },
+  { id: 'tasks', icon: '☷', label: 'TAREAS' },
+  { id: 'memory', icon: '▤', label: 'MEMORIA' },
+  { id: 'settings', icon: '⚙', label: 'CONFIGURACIÓN' },
 ];
 
-async function request(path, options = {}) {
-  let response;
+async function api(path, options = {}) {
+  let res;
   try {
-    response = await fetch(path, {
-      ...options,
+    res = await fetch(path, { ...options,
       headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     });
   } catch {
-    throw new Error('No es posible conectar con el núcleo de NYX.');
+    throw new Error('No se pudo conectar con el núcleo de NYX.');
   }
-  if (!response.ok) {
-    let detail = 'Error de comunicación (' + response.status + ')';
-    try { detail = (await response.json()).detail || detail; } catch { /* Sin JSON */ }
+  if (!res.ok) {
+    let detail = 'Error HTTP ' + res.status;
+    try { detail = (await res.json()).detail || detail; } catch { /* respuesta no JSON */ }
     throw new Error(typeof detail === 'string' ? detail : 'Solicitud no válida');
   }
-  return response.status === 204 ? null : response.json();
+  return res.status === 204 ? null : res.json();
 }
 
-function speak(text, mode = 'chat') {
-  // Voz preliminar del navegador; aun NO es Piper ni STT offline.
-  if (!('speechSynthesis' in window)) return false;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'es-ES';
-  const voices = window.speechSynthesis.getVoices();
-  const selected = voices.find(v => v.lang.toLowerCase().startsWith('es') && v.localService)
-    || voices.find(v => v.lang.toLowerCase().startsWith('es'));
-  if (selected) utterance.voice = selected;
-  utterance.rate = mode === 'alert' ? 0.82 : 0.96;
-  utterance.pitch = mode === 'alert' ? 0.68 : 0.9;
-  window.speechSynthesis.speak(utterance);
-  return true;
+function toDate(date) {
+  if (!date) return null;
+  return new Date(date.replace(' ', 'T') + (date.includes('Z') ? '' : 'Z'));
+}
+function shortDate(date) {
+  const d = toDate(date);
+  return d ? d.toLocaleString('es-CR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+}
+function time(date) {
+  const d = toDate(date);
+  return d ? d.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }) : '';
+}
+function dateGroup(date) {
+  const d = toDate(date);
+  if (!d) return 'ANTERIORES';
+  const now = new Date();
+  const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.floor((day(now) - day(d)) / 86400000);
+  if (diff === 0) return 'HOY';
+  if (diff === 1) return 'AYER';
+  if (diff >= 0 && diff < 7) return 'ESTA SEMANA';
+  return 'ANTERIORES';
+}
+
+function pcmWav(samples, sampleRate = 16000) {
+  const dataSize = samples.length * 2;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+  const word = (offset, value) => view.setUint32(offset, value, true);
+  const half = (offset, value) => view.setUint16(offset, value, true);
+  const ascii = (offset, value) => { for (let i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i)); };
+  ascii(0, 'RIFF'); word(4, 36 + dataSize); ascii(8, 'WAVE');
+  ascii(12, 'fmt '); word(16, 16); half(20, 1); half(22, 1);
+  word(24, sampleRate); word(28, sampleRate * 2); half(32, 2); half(34, 16);
+  ascii(36, 'data'); word(40, dataSize);
+  for (let i = 0; i < samples.length; i++) {
+    const x = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true);
+  }
+  return buffer;
+}
+
+function Core({ state }) {
+  return <div className={'core-container core-' + state} aria-label={'Núcleo: ' + state}>
+    <div className="core-halo" />
+    <div className="core-orbit orbit-one" /><div className="core-orbit orbit-two" />
+    <div className="core-diamond"><span>N</span></div>
+    <div className="core-side left" /><div className="core-side right" />
+  </div>;
 }
 
 export default function App() {
   const [tab, setTab] = useState('chat');
+  const [status, setStatus] = useState({ online: false, model: 'nyx:0.2' });
+  const [voiceReady, setVoiceReady] = useState({ tts_ready: false, stt_ready: false });
+  const [sessions, setSessions] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [memories, setMemories] = useState([]);
-  const [online, setOnline] = useState(false);
-  const [model, setModel] = useState('nyx:0.1');
   const [draft, setDraft] = useState('');
   const [itemDraft, setItemDraft] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [voice, setVoice] = useState(false);
+  const [search, setSearch] = useState('');
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [voiceProfile, setVoiceProfile] = useState('hybrid');
+  const [voiceState, setVoiceState] = useState('idle');
+  const [sideOpen, setSideOpen] = useState(() => window.innerWidth > 680);
+  const [rightOpen, setRightOpen] = useState(true);
   const bottomRef = useRef(null);
+  const waveRef = useRef(null);
+  const analyserRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const currentSourceRef = useRef(null);
+  const recorderRef = useRef(null);
+  const micStreamRef = useRef(null);
+  const micCtxRef = useRef(null);
+  const micTimerRef = useRef(null);
+  const recordingRef = useRef(false);
 
-  async function refresh() {
+  const activeSession = sessions.find(s => s.id === selectedId);
+
+  const refreshSessions = useCallback(async (q = '') => {
+    const rows = await api('/api/sessions' + (q ? '?q=' + encodeURIComponent(q) : ''));
+    setSessions(rows);
+    return rows;
+  }, []);
+
+  const refresh = useCallback(async () => {
     const results = await Promise.allSettled([
-      request('/api/history'), request('/api/tasks'),
-      request('/api/memory'), request('/api/status')
+      api('/api/sessions'), api('/api/tasks'), api('/api/memory'),
+      api('/api/status'), api('/api/voice/status'),
     ]);
-    if (results[0].status === 'fulfilled') setMessages(results[0].value);
+    if (results[0].status === 'fulfilled') {
+      setSessions(results[0].value);
+      if (results[0].value.length) {
+        const latest = results[0].value[0].id;
+        setSelectedId(latest);
+        try { setMessages(await api('/api/sessions/' + latest + '/messages')); }
+        catch { setMessages([]); }
+      }
+    }
     if (results[1].status === 'fulfilled') setTasks(results[1].value);
     if (results[2].status === 'fulfilled') setMemories(results[2].value);
-    if (results[3].status === 'fulfilled') {
-      setOnline(results[3].value.online);
-      setModel(results[3].value.model);
+    if (results[3].status === 'fulfilled') setStatus(results[3].value);
+    if (results[4].status === 'fulfilled') setVoiceReady(results[4].value);
+    if (results.some(r => r.status === 'rejected')) setError('Algunos servicios no respondieron.');
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    if (tab === 'chat') bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages, tab, busy]);
+
+  useEffect(() => {
+    const canvas = waveRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    let raf;
+    const draw = () => {
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = 'rgba(220,20,60,.16)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+      const analyser = analyserRef.current;
+      if (analyser && (voiceState === 'speaking' || voiceState === 'listening')) {
+        const values = new Uint8Array(analyser.fftSize);
+        analyser.getByteTimeDomainData(values);
+        ctx.strokeStyle = '#ff365f';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = 'rgba(255,42,90,.75)'; ctx.shadowBlur = 9;
+        ctx.beginPath();
+        const step = w / (values.length - 1);
+        values.forEach((v, i) => {
+          const y = (v / 255) * h;
+          if (i === 0) ctx.moveTo(0, y);
+          else ctx.lineTo(i * step, y);
+        });
+        ctx.stroke(); ctx.shadowBlur = 0;
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => cancelAnimationFrame(raf);
+  }, [voiceState, tab, rightOpen]);
+
+  useEffect(() => () => {
+    currentSourceRef.current?.stop?.();
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+    micStreamRef.current?.getTracks().forEach(track => track.stop());
+    micCtxRef.current?.close?.();
+    audioCtxRef.current?.close?.();
+    if (micTimerRef.current) clearTimeout(micTimerRef.current);
+  }, []);
+
+  function ensureAudio() {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) throw new Error('Este navegador no admite Web Audio.');
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+      audioCtxRef.current = new AudioCtor();
     }
-    if (results.some(r => r.status === 'rejected')) {
-      setError('Algunos servicios de NYX no están disponibles.');
+    audioCtxRef.current.resume();
+    return audioCtxRef.current;
+  }
+
+  function stopVoice() {
+    if (currentSourceRef.current) {
+      try { currentSourceRef.current.stop(); } catch { /* ya finalizó */ }
+      currentSourceRef.current = null;
+    }
+    analyserRef.current = null;
+    setVoiceState('idle');
+  }
+
+  async function playVoice(text, mode = 'conversation') {
+    if (!voiceReady.tts_ready) {
+      setError('Instala primero el modelo Piper para utilizar la voz local.');
+      return;
+    }
+    try {
+      stopVoice();
+      const ctx = ensureAudio();
+      setVoiceState('processing');
+      const response = await fetch('/api/voice/speak', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text.slice(0, 1400), mode }),
+      });
+      if (!response.ok) {
+        const json = await response.json();
+        throw new Error(json.detail || 'No se pudo generar el audio');
+      }
+      const data = await response.arrayBuffer();
+      const audio = await ctx.decodeAudioData(data);
+      const source = ctx.createBufferSource();
+      source.buffer = audio;
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      const master = ctx.createGain();
+      master.gain.value = 0.9;
+      if (mode === 'system' && voiceProfile === 'hybrid') {
+        // Una copia retardada y filtrada da una textura electronica suave.
+        const lowpass = ctx.createBiquadFilter();
+        lowpass.type = 'lowpass'; lowpass.frequency.value = 2600;
+        const delay = ctx.createDelay(0.2); delay.delayTime.value = 0.038;
+        const echo = ctx.createGain(); echo.gain.value = 0.15;
+        source.connect(master);
+        source.connect(lowpass); lowpass.connect(delay); delay.connect(echo); echo.connect(master);
+      } else {
+        source.connect(master);
+      }
+      master.connect(analyser); analyser.connect(ctx.destination);
+      currentSourceRef.current = source;
+      analyserRef.current = analyser;
+      source.onended = () => {
+        if (currentSourceRef.current === source) {
+          currentSourceRef.current = null;
+          analyserRef.current = null;
+          setVoiceState('idle');
+        }
+      };
+      source.start();
+      setVoiceState('speaking');
+    } catch (err) {
+      analyserRef.current = null;
+      setVoiceState('idle');
+      setError(err.message);
     }
   }
 
-  useEffect(() => { refresh(); }, []);
-  useEffect(() => {
-    if (tab === 'chat') bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, tab]);
+  async function selectSession(id, openChat = true) {
+    try {
+      setMessages(await api('/api/sessions/' + id + '/messages'));
+      setSelectedId(id); if (openChat) setTab('chat'); setError('');
+    } catch (err) { setError(err.message); }
+  }
+  function newSession() {
+    stopVoice(); setSelectedId(null); setMessages([]); setDraft('');
+    setTab('chat'); setError('');
+  }
 
   async function send(event) {
     event.preventDefault();
     const text = draft.trim();
     if (!text || busy) return;
+    if (voiceEnabled && voiceReady.tts_ready) {
+      try { ensureAudio(); } catch (err) { setError(err.message); }
+    }
     setDraft(''); setBusy(true); setError('');
+    const sessionAtSend = selectedId;
     setMessages(prev => [...prev, {
-      id: 'pending-' + Date.now(), role: 'user', content: text
+      id: 'pending-' + Date.now(), role: 'user', content: text,
     }]);
+    setVoiceState('processing');
     try {
-      const answer = await request('/api/chat', {
-        method: 'POST', body: JSON.stringify({ text })
+      const data = await api('/api/chat', {
+        method: 'POST',
+        body: JSON.stringify({ text, session_id: sessionAtSend }),
       });
-      setMessages(await request('/api/history'));
-      if (voice) speak(answer.reply);
+      setSelectedId(data.session_id);
+      setMessages(await api('/api/sessions/' + data.session_id + '/messages'));
+      await refreshSessions();
+      if (voiceEnabled && voiceReady.tts_ready) await playVoice(data.reply);
+      else setVoiceState('idle');
     } catch (err) {
+      setVoiceState('idle');
       setError(err.message);
-      if (voice) speak('Alerta. No fue posible completar la solicitud.', 'alert');
-      try { setMessages(await request('/api/history')); } catch { /* offline */ }
+      if (sessionAtSend) {
+        try { setMessages(await api('/api/sessions/' + sessionAtSend + '/messages')); }
+        catch { /* fuera de linea */ }
+      }
+      await refreshSessions().catch(() => {});
     } finally { setBusy(false); }
   }
 
   async function createItem(event) {
     event.preventDefault();
-    const text = itemDraft.trim();
-    if (!text) return;
-    setError('');
+    const value = itemDraft.trim();
+    if (!value) return;
     try {
-      await request('/api/' + (tab === 'tasks' ? 'tasks' : 'memory'), {
-        method: 'POST', body: JSON.stringify({ text })
+      const resource = tab === 'tasks' ? 'tasks' : 'memory';
+      await api('/api/' + resource, {
+        method: 'POST', body: JSON.stringify({ text: value }),
       });
       setItemDraft('');
-      if (tab === 'tasks') setTasks(await request('/api/tasks'));
-      else setMemories(await request('/api/memory'));
+      if (tab === 'tasks') setTasks(await api('/api/tasks'));
+      else setMemories(await api('/api/memory'));
     } catch (err) { setError(err.message); }
   }
-
-  async function toggleTask(task) {
-    setError('');
+  async function updateTask(task) {
     try {
-      await request('/api/tasks/' + task.id, {
-        method: 'PATCH', body: JSON.stringify({ completed: !task.completed })
+      await api('/api/tasks/' + task.id, {
+        method: 'PATCH', body: JSON.stringify({ completed: !task.completed }),
       });
-      setTasks(await request('/api/tasks'));
+      setTasks(await api('/api/tasks'));
     } catch (err) { setError(err.message); }
   }
-
-  async function removeItem(id) {
-    setError('');
+  async function deleteItem(id) {
+    if (!window.confirm('¿Eliminar este elemento?')) return;
     try {
-      await request('/api/' + (tab === 'tasks' ? 'tasks' : 'memory') + '/' + id, {
-        method: 'DELETE'
+      await api('/api/' + tab + '/' + id, { method: 'DELETE' });
+      if (tab === 'tasks') setTasks(await api('/api/tasks'));
+      else setMemories(await api('/api/memory'));
+    } catch (err) { setError(err.message); }
+  }
+  async function renameSession(session) {
+    const title = window.prompt('Nuevo título de la sesión:', session.title)?.trim();
+    if (!title || title === session.title) return;
+    try {
+      await api('/api/sessions/' + session.id, {
+        method: 'PATCH', body: JSON.stringify({ title: title.slice(0, 90) }),
       });
-      if (tab === 'tasks') setTasks(await request('/api/tasks'));
-      else setMemories(await request('/api/memory'));
+      await refreshSessions(search);
+    } catch (err) { setError(err.message); }
+  }
+  async function deleteSession(session) {
+    if (!window.confirm('¿Eliminar definitivamente la sesión y todos sus mensajes?')) return;
+    try {
+      await api('/api/sessions/' + session.id, { method: 'DELETE' });
+      const rows = await refreshSessions(search);
+      if (selectedId === session.id) {
+        if (rows.length) await selectSession(rows[0].id);
+        else newSession();
+      }
     } catch (err) { setError(err.message); }
   }
 
-  function changeTab(next) {
-    setTab(next); setItemDraft(''); setError('');
+  async function startMic() {
+    if (!voiceReady.stt_ready) {
+      setError('Instala el modelo local Vosk antes de activar el micrófono.');
+      return;
+    }
+    try {
+      stopVoice();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStreamRef.current = stream;
+      const AudioCtor = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioCtor();
+      micCtxRef.current = ctx;
+      const micNode = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      micNode.connect(analyser);
+      analyserRef.current = analyser;
+      const chunks = [];
+      const recorder = new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      recorder.onstop = async () => {
+        recordingRef.current = false;
+        stream.getTracks().forEach(track => track.stop());
+        micStreamRef.current = null;
+        analyserRef.current = null;
+        setVoiceState('processing');
+        try {
+          const recorded = new Blob(chunks, { type: recorder.mimeType });
+          const audio = await ctx.decodeAudioData(await recorded.arrayBuffer());
+          const length = Math.ceil(audio.duration * 16000);
+          const offline = new OfflineAudioContext(1, length, 16000);
+          const source = offline.createBufferSource();
+          source.buffer = audio;
+          source.connect(offline.destination);
+          source.start();
+          const resampled = await offline.startRendering();
+          const res = await fetch('/api/voice/transcribe', {
+            method: 'POST', headers: { 'Content-Type': 'audio/wav' },
+            body: pcmWav(resampled.getChannelData(0)),
+          });
+          if (!res.ok) {
+            const payload = await res.json();
+            throw new Error(payload.detail || 'No se pudo reconocer la voz');
+          }
+          const result = await res.json();
+          if (!result.text) throw new Error('No se reconocieron palabras. Intenta de nuevo.');
+          setDraft(result.text);
+          setTab('chat');
+        } catch (err) { setError(err.message); }
+        finally { setVoiceState('idle'); ctx.close(); }
+      };
+      recorder.start();
+      recordingRef.current = true;
+      setVoiceState('listening');
+      setError('');
+      micTimerRef.current = setTimeout(() => stopMic(), 18000);
+    } catch (err) {
+      micStreamRef.current?.getTracks().forEach(track => track.stop());
+      setError('No se pudo utilizar el micrófono: ' + err.message);
+      setVoiceState('idle');
+    }
+  }
+  function stopMic() {
+    if (micTimerRef.current) clearTimeout(micTimerRef.current);
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
   }
 
-  return (
+  function exportSession() {
+    if (!activeSession) return;
+    const lines = messages.map(m => '[' + shortDate(m.created_at) + '] ' +
+      (m.role === 'assistant' ? 'NYX' : 'USUARIO') + ':\n' + m.content);
+    const blob = new Blob([activeSession.title + '\n\n' + lines.join('\n\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'nyx-sesion-' + activeSession.id + '.txt'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  const grouped = sessions.reduce((acc, session) => {
+    const key = dateGroup(session.updated_at);
+    (acc[key] ||= []).push(session);
+    return acc;
+  }, {});
+
+  return <div className="nyx-app">
+    <header className="topbar">
+      <div className="brand">
+        <button type="button" className="nav-collapse" title="Mostrar navegación" onClick={() => setSideOpen(!sideOpen)}>☰</button>
+        <div className="brand-sigil"><span>N</span></div>
+        <div className="brand-text"><strong>NYX<span>_</span></strong><small>CRIMSON INTELLIGENCE SYSTEM</small></div>
+      </div>
+      <div className="top-center"><span className="bar-line" /> PERSONAL LOCAL INTELLIGENCE <span className="bar-line" /></div>
+      <div className="top-state"><span className={'led ' + (status.online ? 'on' : 'off')} />
+        <span>{status.online ? 'NÚCLEO CONECTADO' : 'MODELO DESCONECTADO'}</span>
+        <small>BUILD 0.2 / LOCALHOST</small>
+      </div>
+    </header>
     <div className="shell">
-      <header className="header">
-        <div className="identity">
-          <div className="brand-mark"><span>N</span></div>
-          <div><div className="logo">NYX<span>_</span></div>
-            <div className="kicker">PERSONAL INTELLIGENCE</div></div>
+      {sideOpen && <aside className="sidebar">
+        <div className="section-caption">/ NAVIGATION MODULE</div>
+        <button className="start-session" type="button" onClick={newSession}><span>＋</span> NUEVA CONVERSACIÓN</button>
+        <nav aria-label="Navegación principal">
+          {MENU.map(item => <button type="button" key={item.id}
+            className={'nav-item ' + (tab === item.id ? 'active' : '')}
+            onClick={() => { setTab(item.id); setItemDraft(''); setError(''); }}>
+            <span className="nav-icon">{item.icon}</span><span>{item.label}</span>
+            {tab === item.id && <i />}
+          </button>)}
+        </nav>
+        <div className="side-bottom">
+          <div className="section-caption">/ LOCAL ENGINE</div>
+          <div className="meter"><span>CORE</span><strong>{status.model}</strong></div>
+          <div className="meter"><span>OPERACIÓN</span><strong>CPU · DOCKER</strong></div>
+          <div className="meter"><span>MEMORIA</span><strong>SQLITE LOCAL</strong></div>
+          <button type="button" className="plain-link" onClick={() => refresh()}>↻ SINCRONIZAR</button>
         </div>
-        <div className="top-status">
-          <div><span className={'status-dot ' + (online ? 'ok' : 'down')}></span>
-            {online ? 'LOCAL AI ONLINE' : 'MODEL OFFLINE'}</div>
-          <small>CRIMSON SYSTEM / 0.1</small>
+      </aside>}
+      <main className="content">
+        <div className="content-head">
+          <div><div className="eyebrow">NYX / {tab.toUpperCase()} / SYSTEM INTERFACE</div>
+            <h1>{MENU.find(n => n.id === tab)?.label}</h1></div>
+          <div className="head-actions">
+            <span className="build-tag">◈ V0.2 · CRIMSON</span>
+            <button className="small-icon" title="Mostrar u ocultar panel de estado" onClick={() => setRightOpen(!rightOpen)}>▣</button>
+          </div>
         </div>
-      </header>
+        {error && <div className="error-bar" role="alert"><span>⚠ {error}</span>
+          <button onClick={() => setError('')} aria-label="Cerrar alerta">×</button></div>}
 
-      <div className="workspace">
-        <aside className="side">
-          <div className="section-label">/ NAVIGATION</div>
-          {NAV.map(([id, glyph, name]) => (
-            <button key={id} type="button"
-              className={'nav-button ' + (tab === id ? 'selected' : '')}
-              onClick={() => changeTab(id)}>
-              <span className="nav-glyph">{glyph}</span><span>{name}</span>
-            </button>
-          ))}
-          <div className="side-footer">
-            <div className="section-label">/ ENGINE</div>
-            <div className="engine">{model}</div>
-            <div>CPU · LOCAL DOCKER</div>
-            <button type="button" className="refresh-button" onClick={refresh}>
-              ↻ ACTUALIZAR ESTADO
-            </button>
-          </div>
-        </aside>
-
-        <main className="main">
-          <div className="main-top">
-            <div><h1>/ {NAV.find(n => n[0] === tab)?.[2]}</h1>
-              <p>NYX CORE / LOCAL INTERFACE</p></div>
-            <span className="prototype">V0.1 / PROTOTYPE</span>
-          </div>
-          {error && <div className="alert" role="alert">
-            <span>⚠ {error}</span>
-            <button type="button" onClick={() => setError('')}>×</button>
-          </div>}
-
-          {tab === 'chat' && <>
-            <div className="panel conversation" aria-live="polite">
-              <div className="panel-meta">SESSION / LOCAL HISTORY</div>
-              {messages.length === 0 && <div className="welcome">
-                <div className="assistant-avatar">N</div>
-                <div><strong>NYX / ASSISTANT</strong>
-                  <p>Sistema preparado. Soy NYX, tu asistente local. ¿En qué puedo ayudarte?</p>
-                </div>
-              </div>}
-              {messages.map(m => <div className={'message ' + m.role} key={m.id}>
-                <div className="message-label">
-                  {m.role === 'assistant' ? 'NYX / ASSISTANT' : 'OPERADOR / USER'}
-                </div>
-                <div className="message-text">{m.content}</div>
-              </div>)}
-              {busy && <div className="thinking">
-                NYX está procesando la respuesta en tu CPU...
-              </div>}
-              <div ref={bottomRef}></div>
-            </div>
-            <div className="chat-controls">
-              <label className="voice-control">
-                <input type="checkbox" checked={voice}
-                  onChange={e => setVoice(e.target.checked)}/>
-                ◉ LEER RESPUESTAS (VOZ EXPERIMENTAL)
-              </label>
-              {voice && <button type="button"
-                onClick={() => window.speechSynthesis?.cancel()}>
-                ■ DETENER VOZ
-              </button>}
-            </div>
-            <form className="composer" onSubmit={send}>
-              <textarea rows="2" maxLength={4000} value={draft}
-                placeholder="Escribe una instrucción para NYX..."
-                onChange={e => setDraft(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    e.currentTarget.form.requestSubmit();
-                  }
-                }}/>
-              <button type="submit" disabled={!draft.trim() || busy}>
-                {busy ? 'PROCESANDO' : 'ENVIAR ↗'}
-              </button>
-            </form>
-          </>}
-
-          {tab === 'history' && <div className="panel flex-panel">
-            <p className="panel-meta">/ REGISTRO PERSISTENTE · SQLITE</p>
-            <p className="explanation">El historial se conserva en el volumen Docker nyx_memory.</p>
-            <div className="history-list">
-              {messages.length ? messages.map(m =>
-                <div className="history-item" key={m.id}>
-                  <strong>{m.role === 'assistant' ? 'NYX' : 'TÚ'}</strong>
-                  <span>{m.content}</span>
-                </div>) : <p className="empty">Aún no hay conversaciones.</p>}
-            </div>
-          </div>}
-
-          {(tab === 'tasks' || tab === 'memory') &&
-            <div className="panel flex-panel">
-              <p className="panel-meta">
-                {tab === 'tasks' ? '/ GESTIÓN DE TAREAS' : '/ NOTAS DE MEMORIA EXPLÍCITAS'}
-              </p>
-              <p className="explanation">{tab === 'tasks'
-                ? 'Crea y completa tareas. Todavía no se generan recordatorios automáticos.'
-                : 'Solo se guardan las notas que agregues aquí. Se incluyen como contexto al conversar.'}
-              </p>
-              <form className="item-form" onSubmit={createItem}>
-                <input maxLength={500} value={itemDraft}
-                  placeholder={tab === 'tasks' ? 'Nueva tarea...' : 'Un dato que NYX debe recordar...'}
-                  onChange={e => setItemDraft(e.target.value)}/>
-                <button type="submit" disabled={!itemDraft.trim()}>+ GUARDAR</button>
-              </form>
-              <div className="item-list">
-                {(tab === 'tasks' ? tasks : memories).length === 0 &&
-                  <p className="empty">No hay elementos registrados.</p>}
-                {(tab === 'tasks' ? tasks : memories).map(item =>
-                  <div className="item" key={item.id}>
-                    {tab === 'tasks' &&
-                      <input aria-label="Marcar tarea" type="checkbox"
-                        checked={item.completed} onChange={() => toggleTask(item)}/>}
-                    <span className={item.completed ? 'completed' : ''}>
-                      {tab === 'tasks' ? item.title : item.content}
-                    </span>
-                    <button type="button" className="delete"
-                      onClick={() => removeItem(item.id)} aria-label="Eliminar">×</button>
-                  </div>)}
+        {tab === 'chat' && <div className="chat-layout">
+          <div className="chat-topline"><span>● SESSION / {activeSession ? String(activeSession.id).padStart(3,'0') : 'NEW'}</span>
+            <span>{activeSession?.title || 'Conversación nueva'}</span></div>
+          <div className="chat-scroll" aria-live="polite">
+            {messages.length === 0 && <div className="intro">
+              <div className="intro-badge">NYX · ASSISTANT</div>
+              <h2>Sistema preparado<span>_</span></h2>
+              <p>Tu asistente de inteligencia artificial local está listo. Escribe un mensaje o utiliza el micrófono.</p>
+              <div className="intro-chips">
+                <button onClick={() => setDraft('Ayúdame a organizar mis tareas de hoy')}>⌁ ORGANIZAR TAREAS</button>
+                <button onClick={() => setDraft('Explícame un concepto de Python')}>⌁ ESTUDIAR PYTHON</button>
               </div>
             </div>}
+            {messages.map(m => <div className={'bubble-line ' + m.role} key={m.id}>
+              <div className="message-mark">{m.role === 'assistant' ? 'N' : '›'}</div>
+              <div className="bubble">
+                <div className="bubble-head"><b>{m.role === 'assistant' ? 'NYX / ASSISTANT' : 'USUARIO / OPERADOR'}</b>
+                  <span>{time(m.created_at)}</span></div>
+                <div className="bubble-body">{m.content}</div>
+                {m.role === 'assistant' && voiceReady.tts_ready &&
+                  <button className="speak-again" type="button" onClick={() => playVoice(m.content)}>▶ ESCUCHAR</button>}
+              </div>
+            </div>)}
+            {busy && <div className="processing"><div className="spinner" /> NYX está generando una respuesta en CPU...</div>}
+            <div ref={bottomRef} />
+          </div>
+          <div className="voice-strip">
+            <div className="voice-meta"><span>▥ VOICE CHANNEL / {voiceState.toUpperCase()}</span>
+              <span>{voiceReady.tts_ready ? 'PIPER LOCAL' : 'PIPER PENDIENTE'}</span></div>
+            <canvas ref={waveRef} width="960" height="74" aria-label="Forma de onda del audio capturado o reproducido" />
+          </div>
+          <div className="compose-area">
+            <form onSubmit={send} className="compose-form">
+              <button type="button" className={'microphone ' + (voiceState === 'listening' ? 'live' : '')}
+                title={voiceState === 'listening' ? 'Detener grabación' : 'Hablar a NYX'}
+                disabled={!voiceReady.stt_ready || busy}
+                onClick={() => voiceState === 'listening' ? stopMic() : startMic()}>
+                {voiceState === 'listening' ? '■' : '♩'}
+              </button>
+              <textarea value={draft} onChange={e => setDraft(e.target.value)}
+                placeholder="Escribe una instrucción para NYX..." rows="2" maxLength={4000}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault(); e.currentTarget.form.requestSubmit();
+                }}}/>
+              <button className="send" type="submit" disabled={busy || !draft.trim()}>
+                {busy ? '···' : 'ENVIAR ↗'}
+              </button>
+            </form>
+            <div className="compose-foot">
+              <label><input type="checkbox" checked={voiceEnabled && voiceReady.tts_ready}
+                disabled={!voiceReady.tts_ready}
+                onChange={e => { setVoiceEnabled(e.target.checked); if (!e.target.checked) stopVoice(); }} />
+                RESPUESTAS HABLADAS</label>
+              <div><button type="button" onClick={stopVoice} disabled={voiceState !== 'speaking'}>■ DETENER VOZ</button>
+                <span>ENTER: ENVIAR · SHIFT+ENTER: SALTO</span></div>
+            </div>
+          </div>
+        </div>}
 
-          <footer>NYX V0.1 // PERSONAL LOCAL ASSISTANT // CRIMSON SYSTEM</footer>
-        </main>
-      </div>
+        {tab === 'history' && <div className="history-layout">
+          <div className="sessions-panel">
+            <div className="panel-top"><div><span className="eyebrow">/ ARCHIVO</span><h2>Sesiones</h2></div>
+              <span className="count-chip">{sessions.length}</span></div>
+            <input className="search-input" value={search}
+              onChange={async e => { const q = e.target.value; setSearch(q); try { await refreshSessions(q); } catch (err) { setError(err.message); }}}
+              placeholder="⌕ Buscar en conversaciones..." />
+            <div className="session-list">
+              {Object.entries(grouped).map(([label, rows]) =>
+                <section key={label}>
+                  <div className="group-label">{label}</div>
+                  {rows.map(s => <div key={s.id}
+                    className={'session-card ' + (selectedId === s.id ? 'current' : '')}>
+                    <button type="button" className="session-main" onClick={() => selectSession(s.id, false)}>
+                      <span className="session-id">SESSION_{String(s.id).padStart(3, '0')}</span>
+                      <strong>{s.title}</strong>
+                      <small>{shortDate(s.updated_at)} · {s.count} mensajes</small>
+                      <span className="session-preview">{s.preview || 'Sesión vacía'}</span>
+                    </button>
+                    <div className="session-buttons">
+                      <button title="Cambiar nombre" onClick={() => renameSession(s)}>✎</button>
+                      <button title="Eliminar sesión" onClick={() => deleteSession(s)}>×</button>
+                    </div>
+                  </div>)}
+                </section>)}
+              {!sessions.length && <p className="muted">Aún no hay sesiones con ese filtro.</p>}
+            </div>
+          </div>
+          <div className="timeline-panel">
+            <div className="panel-top"><div><span className="eyebrow">/ SESSION TIMELINE</span>
+              <h2>{activeSession?.title || 'Selecciona una sesión'}</h2></div>
+              <button className="outline-button" onClick={exportSession} disabled={!activeSession}>↓ EXPORTAR TXT</button>
+            </div>
+            <div className="timeline">
+              {messages.map(m => <div className="timeline-event" key={m.id}>
+                <span className={'timeline-node ' + m.role} />
+                <div className="timeline-card">
+                  <div className="timeline-head"><strong>{m.role === 'assistant' ? 'NYX / ASSISTANT' : 'OPERADOR / USER'}</strong>
+                    <span>{shortDate(m.created_at)}</span></div>
+                  <p>{m.content}</p>
+                </div>
+              </div>)}
+              {!messages.length && <p className="muted">Selecciona una conversación para examinar sus mensajes.</p>}
+            </div>
+          </div>
+        </div>}
+
+        {(tab === 'tasks' || tab === 'memory') && <div className="records-panel">
+          <div className="panel-top"><div><span className="eyebrow">/ PERSONAL DATABASE</span>
+            <h2>{tab === 'tasks' ? 'Gestión de tareas' : 'Memoria explícita'}</h2></div>
+            <span className="count-chip">{(tab === 'tasks' ? tasks : memories).length} REGISTROS</span></div>
+          <p className="muted">{tab === 'tasks'
+            ? 'Organiza tareas locales. La versión actual todavía no ejecuta recordatorios.'
+            : 'NYX solo guarda los datos que agregues aquí. Puedes eliminarlos cuando quieras.'}</p>
+          <form className="record-form" onSubmit={createItem}>
+            <input maxLength="500" value={itemDraft} onChange={e => setItemDraft(e.target.value)}
+              placeholder={tab === 'tasks' ? 'Nueva tarea...' : 'Información que NYX debe recordar...'}/>
+            <button type="submit" disabled={!itemDraft.trim()}>＋ GUARDAR</button>
+          </form>
+          <div className="record-list">{(tab === 'tasks' ? tasks : memories).map(item =>
+            <div className="record" key={item.id}>
+              <span className="record-glyph">{tab === 'tasks' ? '☷' : '◇'}</span>
+              {tab === 'tasks' && <input type="checkbox" checked={item.completed}
+                onChange={() => updateTask(item)} aria-label="Completar tarea"/>}
+              <div><strong className={item.completed ? 'done' : ''}>
+                {tab === 'tasks' ? item.title : item.content}</strong>
+                <small>{shortDate(item.created_at)}</small>
+              </div>
+              <button onClick={() => deleteItem(item.id)} title="Eliminar">×</button>
+            </div>)}
+            {(tab === 'tasks' ? tasks : memories).length === 0 && <p className="muted">Sin registros por ahora.</p>}
+          </div>
+        </div>}
+
+        {tab === 'settings' && <div className="settings-layout">
+          <div className="settings-card"><div className="eyebrow">/ AUDIO ENGINE</div>
+            <h2>Identidad vocal</h2>
+            <p>Voz local masculina española con Piper. El modo híbrido aplica resonancia electrónica únicamente a alertas.</p>
+            <div className="switch-row"><span>Leer respuestas automáticamente</span>
+              <input type="checkbox" checked={voiceEnabled && voiceReady.tts_ready}
+                disabled={!voiceReady.tts_ready}
+                onChange={e => { setVoiceEnabled(e.target.checked); if (!e.target.checked) stopVoice(); }}/></div>
+            <div className="switch-row"><span>Perfil de voz</span>
+              <select value={voiceProfile} onChange={e => setVoiceProfile(e.target.value)}>
+                <option value="hybrid">Híbrido / alertas metálicas</option>
+                <option value="natural">Natural / sin efectos</option>
+              </select></div>
+            <button className="outline-button" disabled={!voiceReady.tts_ready}
+              onClick={() => playVoice('Sistema NYX inicializado. Estoy preparado para ayudarte.')}>▶ PROBAR VOZ</button>
+            <button className="outline-button" disabled={!voiceReady.tts_ready}
+              onClick={() => playVoice('Atención. Se ha detectado una interrupción en el sistema.', 'system')}>
+              ◆ PROBAR ALERTA</button>
+            <div className="setup-note">
+              <b>Instalación de modelos de voz (una sola vez):</b>
+              <code>docker compose exec api python -m app.voice_setup</code>
+              <p>Tras la descarga, pulsa Sincronizar. Piper y Vosk se ejecutan localmente, sin enviar audio a una API comercial.</p>
+            </div>
+          </div>
+          <div className="settings-card"><div className="eyebrow">/ SYSTEM</div>
+            <h2>Estado de los módulos</h2>
+            <div className="detail-row"><span>Modelo</span><b>{status.model}</b></div>
+            <div className="detail-row"><span>Motor</span><b>{status.online ? 'CONECTADO' : 'DESCONECTADO'}</b></div>
+            <div className="detail-row"><span>Síntesis de voz</span><b>{voiceReady.tts_ready ? 'PIPER LISTO' : 'PENDIENTE'}</b></div>
+            <div className="detail-row"><span>Reconocimiento</span><b>{voiceReady.stt_ready ? 'VOSK LISTO' : 'PENDIENTE'}</b></div>
+            <div className="detail-row"><span>Persistencia</span><b>SQLITE / DOCKER</b></div>
+            <p className="muted">Micrófono desactivado por defecto. La captura se inicia únicamente al pulsar el botón correspondiente.</p>
+          </div>
+        </div>}
+
+        <footer className="footer">NYX 0.2 <span>◆</span> LOCAL INTELLIGENCE <span>◆</span> CRIMSON SYSTEM</footer>
+      </main>
+      {rightOpen && <aside className="inspector">
+        <div className="section-caption">/ NYX CORE</div>
+        <Core state={voiceState} />
+        <div className="core-label">{voiceState === 'idle' ? 'EN ESPERA' : voiceState === 'listening' ? 'ESCUCHANDO' : voiceState === 'speaking' ? 'RESPONDIENDO' : 'PROCESANDO'}</div>
+        <div className="inspector-section"><div className="section-caption">/ STATUS MATRIX</div>
+          <div className="detail-row"><span>LLM</span><strong className={status.online ? 'positive' : 'negative'}>{status.online ? 'ONLINE' : 'OFFLINE'}</strong></div>
+          <div className="detail-row"><span>TTS LOCAL</span><strong>{voiceReady.tts_ready ? 'READY' : 'PENDING'}</strong></div>
+          <div className="detail-row"><span>MIC / STT</span><strong>{voiceReady.stt_ready ? 'READY' : 'PENDING'}</strong></div>
+          <div className="detail-row"><span>VOZ</span><strong>{voiceProfile.toUpperCase()}</strong></div>
+        </div>
+        <div className="inspector-section"><div className="section-caption">/ QUICK STATUS</div>
+          <div className="mini-stat"><span>CONVERSACIONES</span><b>{sessions.length}</b></div>
+          <div className="mini-stat"><span>TAREAS PENDIENTES</span><b>{tasks.filter(t => !t.completed).length}</b></div>
+          <div className="mini-stat"><span>NOTAS DE MEMORIA</span><b>{memories.length}</b></div>
+        </div>
+        <div className="inspector-bottom">
+          <span className="signal-dot" /> LOCAL FIRST / PRIVATE DATA
+        </div>
+      </aside>}
     </div>
-  );
+  </div>;
 }
