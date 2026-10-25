@@ -196,6 +196,17 @@ class BrainTests(unittest.TestCase):
         cached=brain.metrics(self.admin)["cached_vectors"]
         self.assertEqual(cached,2)
 
+    def test_multilingual_embedding_prompts_and_cache_version(self):
+        q=brain._embedding_input("¿Cómo soluciono un enlace wifi?",
+             "embeddinggemma:300m",is_query=True)
+        document=brain._embedding_input("El inyector PoE falló.",
+             "embeddinggemma:300m",is_query=False)
+        self.assertTrue(q.startswith("task: search result | query:"))
+        self.assertTrue(document.startswith("title: none | text:"))
+        self.assertIn("asymmetric-v1",brain._cache_model("embeddinggemma:300m"))
+        self.assertEqual(brain._embedding_input("hola","mock",
+            is_query=True),"hola")
+
     def test_index_requires_opt_in_and_handles_provider_unavailable(self):
         self._case()
         disabled=asyncio.run(brain.index_next(self.admin,"http://ollama"))
