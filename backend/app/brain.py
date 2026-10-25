@@ -293,6 +293,76 @@ def list_feedback(user_id: int, limit: int = 120) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+
+
+def delete_feedback(user_id: int, assistant_message_id: int) -> bool:
+    """Withdraw a rating and its cached embedding, preserving chat history."""
+    with storage.connect() as db:
+        row=db.execute("""SELECT id FROM brain_feedback WHERE owner_id=?
+            AND assistant_message_id=?""",(user_id,assistant_message_id)).fetchone()
+        if not row:
+            return False
+        db.execute("""DELETE FROM brain_vectors WHERE owner_id=?
+            AND item_kind='feedback' AND item_id=?""",(user_id,row["id"]))
+        db.execute("""DELETE FROM brain_feedback WHERE owner_id=?
+            AND assistant_message_id=?""",(user_id,assistant_message_id))
+    return True
+
+
+def remove_vectors(user_id: int, item_kind: str, item_id: int) -> None:
+    """Drop stale vector copies when an explicit memory or research item is erased."""
+    if item_kind not in {"memory","research","case","feedback"}:
+        raise ValueError("Tipo de vector desconocido.")
+    with storage.connect() as db:
+        db.execute("""DELETE FROM brain_vectors
+            WHERE owner_id=? AND item_kind=? AND item_id=?""",
+            (user_id,item_kind,item_id))
+
+
+def purge_session(user_id: int, session_id: int) -> None:
+    """Forget model feedback/tool traces before a user deletes their conversation.
+
+    Doesn't remove independently reported experiences, explicit memory or
+    research records. Everything stays under the same ownership boundary.
+    """
+    with storage.connect() as db:
+        owned=db.execute("SELECT id FROM sessions WHERE id=? AND owner_id=?",
+                         (session_id,user_id)).fetchone()
+        if owned is None:
+            return
+        # Subqueries are owner-scoped and run before messages are deleted.
+        db.execute("""DELETE FROM brain_vectors WHERE owner_id=?
+            AND item_kind='feedback' AND item_id IN (
+                SELECT b.id FROM brain_feedback b
+                JOIN messages m ON m.id=b.assistant_message_id
+                WHERE b.owner_id=? AND m.session_id=?)""",
+            (user_id,user_id,session_id))
+        db.execute("""DELETE FROM brain_feedback WHERE owner_id=?
+            AND assistant_message_id IN (
+                SELECT id FROM messages WHERE session_id=? AND role='assistant')""",
+            (user_id,session_id))
+        db.execute("""DELETE FROM brain_vectors WHERE owner_id=?
+            AND item_kind='case' AND item_id IN (
+                SELECT id FROM brain_cases WHERE owner_id=?
+                AND source_message_id IN (
+                    SELECT id FROM messages WHERE session_id=? AND role='assistant'))""",
+            (user_id,user_id,session_id))
+        db.execute("""DELETE FROM brain_relations WHERE owner_id=?
+            AND (from_case_id IN (
+                SELECT id FROM brain_cases WHERE owner_id=?
+                AND source_message_id IN (
+                    SELECT id FROM messages WHERE session_id=? AND role='assistant'))
+            OR to_case_id IN (
+                SELECT id FROM brain_cases WHERE owner_id=?
+                AND source_message_id IN (
+                    SELECT id FROM messages WHERE session_id=? AND role='assistant')))""",
+            (user_id,user_id,session_id,user_id,session_id))
+        db.execute("""DELETE FROM brain_cases WHERE owner_id=?
+            AND origin='tool_execution' AND source_message_id IN (
+                SELECT id FROM messages WHERE session_id=? AND role='assistant')""",
+            (user_id,session_id))
+
+
 def record_tool_episode(user_id: int, message_id: int,
                         question: str, answer: str, actions: list[str]) -> dict | None:
     """Records only confirmed tool events, never 'success' of the real-world goal."""
