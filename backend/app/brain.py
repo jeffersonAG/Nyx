@@ -578,7 +578,44 @@ async def retrieve(query: str, user_id: int, ollama_url: str,
             "content":content[:850],"trust":trust,"outcome":verdict,
             "source":source,"score":round(score,3),
             "lexical":lex,"semantic":similarity})
-    return {"mode":mode,"items":formatted}
+    # Traceable graph edges: keep evidence and its reporting origin attached.
+    selected={item["id"] for item in formatted if item["kind"]=="case"}
+    graph_links=[]
+    for edge in list_relations(user_id,250):
+        if edge["from_case_id"] in selected or edge["to_case_id"] in selected:
+            graph_links.append({"from_case":edge["from_title"],
+                "to_case":edge["to_title"],"relation":edge["relation"],
+                "evidence":edge["evidence"][:260],"basis":edge["basis"],
+                "source_url":edge["source_url"],
+                "caution":"Relación declarada por usuario; fuente no verificada automáticamente."})
+        if len(graph_links)>=3:
+            break
+    return {"mode":mode,"items":formatted,"graph_links":graph_links}
+
+
+
+async def index_next(user_id: int, ollama_url: str, batch_size: int = 8) -> dict:
+    """On-demand, bounded indexing. Never downloads a model or runs in background."""
+    model=os.environ.get("NYX_BRAIN_EMBED_MODEL","").strip()
+    if not model:
+        return {"enabled":False,"indexed":0,"remaining":None,
+                "message":"Configura un modelo local en NYX_BRAIN_EMBED_MODEL."}
+    candidates=_candidates(user_id)
+    stored=_read_vectors(user_id,model,candidates)
+    missing=[item for item in candidates
+             if (item["item_kind"],item["id"]) not in stored]
+    if not missing:
+        return {"enabled":True,"indexed":0,"remaining":0,"model":model,
+                "message":"Índice semántico al día."}
+    batch=missing[:max(1,min(16,batch_size))]
+    vectors=await _ollama_embed([item["index_text"] for item in batch],ollama_url,model)
+    if not vectors:
+        return {"enabled":True,"indexed":0,"remaining":len(missing),"model":model,
+                "message":"Modelo de embeddings local no disponible. "
+                          "Instálalo en Ollama y comprueba su nombre."}
+    _store_vectors(user_id,model,batch,vectors)
+    return {"enabled":True,"indexed":len(batch),"remaining":len(missing)-len(batch),
+            "model":model,"message":"Indización parcial completada."}
 
 
 def prompt_context(result: dict, *, budget: int = 1900) -> str:
@@ -607,6 +644,11 @@ def prompt_context(result: dict, *, budget: int = 1900) -> str:
             break
         lines.append(serialized)
         used+=len(serialized)+1
+    for edge in result.get("graph_links",[])[:3]:
+        serialized=json.dumps({"graph_relation":edge},ensure_ascii=False,separators=(",",":"))
+        if len(serialized)+used+2<=budget:
+            lines.append(serialized)
+            used+=len(serialized)+1
     return "\n".join(lines)
 
 
