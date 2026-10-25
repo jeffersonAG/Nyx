@@ -545,3 +545,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   background:#401221; color:#ffd4e1; font:11px 'Share Tech Mono','Courier New',monospace;
   padding:11px 13px; box-shadow:0 0 18px #d8255330; }
 .nyx-alert-banner:hover { background:#5e1930; }
+
+/* Agenda NYX 0.5: conservar la estética carmesí original. */
+.led.local {background:#f4aa45;box-shadow:0 0 7px #e59d46;}
+.nyx-local-state {color:#f4aa45;}
+.nyx-reminder-alerts {display:grid;gap:9px;padding:8px 18px;}
+.nyx-reminder-alert {background:#311321;border:1px solid #c03d5e;border-left:4px solid #f54673;
+  border-radius:5px;padding:10px 14px;display:flex;gap:15px;align-items:center;justify-content:space-between;}
+.nyx-reminder-alert div {display:grid;gap:3px;}
+.nyx-reminder-alert b {font-size:10px;letter-spacing:.11em;color:#ff799c;}
+.nyx-reminder-alert strong {font-size:14px;color:#fff;}
+.nyx-reminder-alert small {color:#e8a6ba;}
+.nyx-reminder-alert button {background:#702139;border:1px solid #b53d5d;color:white;padding:9px;border-radius:4px;}

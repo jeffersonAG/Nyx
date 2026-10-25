@@ -3,6 +3,7 @@ import './styles.css';
 import { splitSpeechText } from './voiceChunks.js';
 import AuthPortal from './AuthPortal.jsx';
 import AdminPanel from './AdminPanel.jsx';
+import CalendarPanel from './CalendarPanel.jsx';
 
 let csrfToken = '';
 
@@ -100,6 +101,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [dueAlerts, setDueAlerts] = useState([]);
   const [memories, setMemories] = useState([]);
   const [profile, setProfile] = useState({
     timezone: 'America/Costa_Rica', city: '', country: '', tone: 'natural',
@@ -131,6 +133,44 @@ export default function App() {
   const recordingRef = useRef(false);
 
   const activeSession = sessions.find(s => s.id === selectedId);
+  const modelAvailable = Boolean(status.online);
+  const systemOnline = modelAvailable && Boolean(networkStatus.enabled && networkStatus.connected);
+  const systemLabel = !modelAvailable ? 'MODELO NO DISPONIBLE' : systemOnline ? 'ONLINE' : 'LOCAL';
+
+  useEffect(() => {
+    if (!auth || auth.must_change) return;
+    let active = true;
+    const seen = new Set();
+    async function pollReminders() {
+      try {
+        const pending = await api('/api/calendar/reminders');
+        if (!active) return;
+        setDueAlerts(previous => {
+          const known = new Set(previous.map(item => item.id));
+          return [...previous, ...pending.filter(item => !known.has(item.id))].slice(-15);
+        });
+        for (const item of pending) {
+          if (seen.has(item.id)) continue;
+          seen.add(item.id);
+          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            new Notification('NYX · Recordatorio', {
+              body: item.title + ' · ' + item.start_at.replace('T', ' '),
+            });
+          }
+        }
+      } catch { /* Sin alarmas ficticias mientras el servidor está desconectado. */ }
+    }
+    pollReminders();
+    const interval = setInterval(pollReminders, 60000);
+    return () => { active = false; clearInterval(interval); };
+  }, [auth?.username, auth?.must_change]);
+
+  async function dismissReminder(item) {
+    try {
+      await api('/api/calendar/' + item.id + '/acknowledge', { method: 'POST' });
+      setDueAlerts(previous => previous.filter(row => row.id !== item.id));
+    } catch (err) { setError(err.message); }
+  }
 
   const refreshSessions = useCallback(async (q = '') => {
     const rows = await api('/api/sessions' + (q ? '?q=' + encodeURIComponent(q) : ''));
@@ -663,12 +703,12 @@ export default function App() {
       <div className="brand">
         <button type="button" className="nav-collapse" title="Mostrar navegación" onClick={() => setSideOpen(!sideOpen)}>☰</button>
         <div className="brand-sigil"><span>N</span></div>
-        <div className="brand-text"><strong>NYX<span>_</span></strong><small>CRIMSON INTELLIGENCE SYSTEM</small></div>
+        <div className="brand-text"><strong>NYX<span>_</span></strong></div>
       </div>
-      <div className="top-center"><span className="bar-line" /> PERSONAL LOCAL INTELLIGENCE <span className="bar-line" /></div>
-      <div className="top-state"><span className={'led ' + (status.online ? 'on' : 'off')} />
-        <span>{status.online ? 'NÚCLEO CONECTADO' : 'MODELO DESCONECTADO'}</span>
-        <small>BUILD 0.4.2 / LOCALHOST</small>
+      <div className="top-center"><span className="bar-line" /></div>
+      <div className="top-state" aria-live="polite">
+        <span className={'led ' + (systemOnline ? 'on' : modelAvailable ? 'local' : 'off')} />
+        <span>{systemOnline ? 'SISTEMA EN LÍNEA' : systemLabel}</span>
       </div>
     </header>
     <div className="shell">
@@ -684,10 +724,8 @@ export default function App() {
           </button>)}
         </nav>
         <div className="side-bottom">
-          <div className="section-caption">/ LOCAL ENGINE</div>
-          <div className="meter"><span>CORE</span><strong>{status.model}</strong></div>
-          <div className="meter"><span>OPERACIÓN</span><strong>CPU · DOCKER</strong></div>
-          <div className="meter"><span>MEMORIA</span><strong>SQLITE LOCAL</strong></div>
+          <div className="section-caption">/ NYX</div>
+          <div className="meter"><span>VERSIÓN</span><strong>{status.version || '0.5.0'}</strong></div>
           <button type="button" className="plain-link" onClick={() => refresh()}>↻ SINCRONIZAR</button>
         </div>
       </aside>}
@@ -696,7 +734,7 @@ export default function App() {
           <div><div className="eyebrow">NYX / {tab.toUpperCase()} / SYSTEM INTERFACE</div>
             <h1>{MENU.find(n => n.id === tab)?.label}</h1></div>
           <div className="head-actions">
-            <span className="build-tag">◈ V0.4.2 · SENTINEL</span>
+            {auth.role === 'admin' && <span className="build-tag">◈ NYX {status.version || '0.5.0'}</span>}
             <span className="nyx-login-identity">{auth.username} · {auth.role === 'admin' ? 'ADMIN' : 'USUARIO'}</span>
             <button className="nyx-logout" title="Cerrar sesión" onClick={logoutUser}>⏻ SALIR</button>
             <button className="small-icon" title="Mostrar u ocultar panel de estado" onClick={() => setRightOpen(!rightOpen)}>▣</button>
@@ -709,6 +747,13 @@ export default function App() {
           </button>}
         {error && <div className="error-bar" role="alert"><span>⚠ {error}</span>
           <button onClick={() => setError('')} aria-label="Cerrar alerta">×</button></div>}
+        {dueAlerts.length > 0 && <div className="nyx-reminder-alerts" role="region" aria-label="Recordatorios pendientes">
+          {dueAlerts.map(item => <div className="nyx-reminder-alert" key={item.id} role="alert">
+            <div><b>◆ RECORDATORIO · {item.kind.toUpperCase()}</b>
+              <strong>{item.title}</strong><small>{item.start_at.replace('T', ' · ')}</small></div>
+            <button type="button" onClick={() => dismissReminder(item)}>ENTENDIDO</button>
+          </div>)}
+        </div>}
 
         {tab === 'chat' && <div className="chat-layout">
           <div className="chat-topline"><span>● SESSION / {activeSession ? String(activeSession.id).padStart(3,'0') : 'NEW'}</span>
@@ -849,6 +894,7 @@ export default function App() {
             </div>)}
             {(tab === 'tasks' ? tasks : memories).length === 0 && <p className="muted">Sin registros por ahora.</p>}
           </div>
+          {tab === 'tasks' && <CalendarPanel api={api} tasks={tasks}/>}
         </div>}
 
         {tab === 'settings' && auth.role === 'admin' && <div className="settings-layout">
@@ -934,13 +980,13 @@ export default function App() {
             <AdminPanel auth={auth} api={api} onElevated={updateAuth}/>
           </div>}
 
-        <footer className="footer">NYX 0.4.2 <span>◆</span> LOCAL INTELLIGENCE <span>◆</span> CRIMSON SYSTEM</footer>
+        <footer className="footer">NYX {status.version || '0.5.0'} <span>◆</span> SISTEMA DE ASISTENCIA LOCAL</footer>
       </main>
       {rightOpen && <aside className="inspector">
         <div className="section-caption">/ NYX CORE</div>
         <Core state={voiceState} />
         <div className="core-label">{voiceState === 'idle' ? 'EN ESPERA' : voiceState === 'listening' ? 'ESCUCHANDO' : voiceState === 'speaking' ? 'RESPONDIENDO' : 'PROCESANDO'}</div>
-        <div className="inspector-section"><div className="section-caption">/ STATUS MATRIX</div>
+        {auth.role === 'admin' && <div className="inspector-section"><div className="section-caption">/ STATUS MATRIX</div>
           <div className="detail-row"><span>LLM</span><strong className={status.online ? 'positive' : 'negative'}>{status.online ? 'ONLINE' : 'OFFLINE'}</strong></div>
           <div className="detail-row"><span>INTERNET</span>
             <strong className={networkStatus.connected ? 'positive' : 'negative'}>
@@ -950,7 +996,12 @@ export default function App() {
           <div className="detail-row"><span>MIC / STT</span><strong>{voiceReady.stt_ready ? 'READY' : 'PENDING'}</strong></div>
           <div className="detail-row"><span>VOZ</span><strong>{voiceProfile.toUpperCase()}</strong></div>
           <div className="detail-row"><span>FECHA LOCAL</span><strong>{clockInfo?.date || '—'}</strong></div>
-        </div>
+        </div>}
+        {auth.role !== 'admin' && <div className="inspector-section">
+          <div className="section-caption">/ ESTADO DEL SISTEMA</div>
+          <div className="detail-row"><span>CONEXIÓN</span>
+            <strong className={systemOnline ? 'positive' : modelAvailable ? 'nyx-local-state' : 'negative'}>{systemLabel}</strong></div>
+        </div>}
         <div className="inspector-section"><div className="section-caption">/ QUICK STATUS</div>
           <div className="mini-stat"><span>CONVERSACIONES</span><b>{sessions.length}</b></div>
           <div className="mini-stat"><span>TAREAS PENDIENTES</span><b>{tasks.filter(t => !t.completed).length}</b></div>
