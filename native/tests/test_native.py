@@ -90,6 +90,32 @@ class NeuralNetworkTests(unittest.TestCase):
             self.assertEqual(after["step"],6)
             self.assertEqual(load_checkpoint(checkpoint)["step"],6)
 
+    def test_continued_training_updates_weights_without_overwriting_parent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            parent = Path(tmp)/"original.pt"
+            adapted = Path(tmp)/"adapted.pt"
+            base = ["--data-dir",str(SAMPLES),
+                "--batch-size","2","--context","24","--d-model","48",
+                "--layers","1","--heads","4","--eval-every","2",
+                "--eval-batches","2","--cpu-threads","2","--seed","18"]
+            train(_arguments(base+["--checkpoint",str(parent),"--steps","3"]))
+            before=load_checkpoint(parent)
+            original=before["model"]["tokens.weight"].clone()
+            result=train(_arguments(base+["--checkpoint",str(adapted),
+                "--continue-from",str(parent),"--steps","3"]))
+            updated=load_checkpoint(adapted)
+            self.assertEqual(result["training_mode"],"adaptation")
+            self.assertEqual(updated["training_mode"],"adaptation")
+            self.assertNotEqual(updated["parent_sha256"],None)
+            self.assertFalse(torch.equal(original,updated["model"]["tokens.weight"]))
+            self.assertTrue(torch.equal(
+                original,load_checkpoint(parent)["model"]["tokens.weight"]))
+            self.assertTrue(torch.isfinite(
+                torch.tensor(updated["validation_baseline"])))
+            with self.assertRaises(ValueError):
+                train(_arguments(base+["--checkpoint",str(parent),
+                    "--continue-from",str(parent),"--steps","4"]))
+
     def test_validate_prevents_invalid_large_config_and_bad_corpus(self):
         with self.assertRaises(ValueError):
             ModelConfig(context=5000).validate()

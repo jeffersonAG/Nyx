@@ -17,7 +17,9 @@ from .model import ModelConfig, NativeTransformer
 def save_checkpoint(path: Path, *, model: NativeTransformer,
                     optimizer: torch.optim.Optimizer, step: int,
                     corpus_digest: str, validation_loss: float,
-                    seed: int) -> None:
+                    seed: int, validation_baseline: float | None = None,
+                    training_mode: str = "scratch",
+                    parent_sha256: str | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     bundle = {
         "architecture": "nyx-native-transformer-v1",
@@ -28,6 +30,9 @@ def save_checkpoint(path: Path, *, model: NativeTransformer,
         "corpus_sha256": corpus_digest,
         "validation_loss": validation_loss,
         "seed": seed,
+        "validation_baseline": validation_baseline,
+        "training_mode": training_mode,
+        "parent_sha256": parent_sha256,
     }
     with NamedTemporaryFile(prefix="nyx-", suffix=".tmp",
                             dir=path.parent, delete=False) as temp:

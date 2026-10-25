@@ -6,6 +6,7 @@ elige cada archivo de corpus y ejecuta manualmente este comando.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -51,6 +52,8 @@ def _arguments(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--cpu-threads", type=int, default=4)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--continue-from", type=Path, default=None,
+        help="Adaptar pesos propios a otro corpus; siempre guardar en otro checkpoint.")
     return parser.parse_args(argv)
 
 
@@ -65,6 +68,11 @@ def train(args: argparse.Namespace) -> dict:
         raise ValueError("--cpu-threads fuera de rango.")
     if not 1e-6 <= args.learning_rate <= .01 or not 0 <= args.weight_decay <= 1:
         raise ValueError("Hiperparámetros de optimización fuera de rango.")
+    if args.resume and args.continue_from:
+        raise ValueError("--resume y --continue-from son modos incompatibles.")
+    if args.continue_from and args.continue_from.resolve() == args.checkpoint.resolve():
+        raise ValueError("Para adaptación usa un checkpoint de salida NUEVO, "
+                         "sin sobrescribir los pesos originales.")
     torch.set_num_threads(args.cpu_threads)
     torch.manual_seed(args.seed)
     random.seed(args.seed)
@@ -77,6 +85,15 @@ def train(args: argparse.Namespace) -> dict:
                                   lr=args.learning_rate,
                                   weight_decay=args.weight_decay)
     initial_step = 0
+    training_mode = "scratch"
+    parent_sha256 = None
+    if args.continue_from:
+        previous = load_checkpoint(args.continue_from)
+        if previous["config"] != config.as_dict():
+            raise ValueError("El checkpoint original utiliza otra arquitectura.")
+        model.load_state_dict(previous["model"], strict=True)
+        parent_sha256 = hashlib.sha256(args.continue_from.read_bytes()).hexdigest()
+        training_mode = "adaptation"
     if args.resume:
         saved = load_checkpoint(args.checkpoint)
         if saved["config"] != config.as_dict():
@@ -85,12 +102,21 @@ def train(args: argparse.Namespace) -> dict:
             raise ValueError("El corpus cambió. No se admite reanudar con datos diferentes.")
         model.load_state_dict(saved["model"], strict=True)
         optimizer.load_state_dict(saved["optimizer"])
+        training_mode = saved.get("training_mode", "scratch")
+        parent_sha256 = saved.get("parent_sha256")
         initial_step = int(saved["step"])
         if initial_step >= args.steps:
             raise ValueError("El número de pasos debe superar el checkpoint anterior.")
 
     train_rng = torch.Generator().manual_seed(args.seed + initial_step)
-    eval_rng = torch.Generator().manual_seed(args.seed + 999)
+
+    def held_out_loss() -> float:
+        # Las mismas ventanas de validación en cada medición: comparación justa.
+        return evaluate(model, corpus.validation, batch_size=args.batch_size,
+                        batches=args.eval_batches,
+                        rng=torch.Generator().manual_seed(args.seed + 999))
+
+    validation_baseline = held_out_loss()
     def schedule(step: int) -> float:
         # Reanudar no cambia el máximo de pasos definido por el operador.
         warmup = min(30, max(1, args.steps // 10))
@@ -115,22 +141,27 @@ def train(args: argparse.Namespace) -> dict:
         if not math.isfinite(last_training):
             raise RuntimeError("Pérdida no finita; entrenamiento detenido sin sobrescribir pesos.")
         if step == 1 or step % args.eval_every == 0 or step == args.steps:
-            last_validation = evaluate(model, corpus.validation,
-                                       batch_size=args.batch_size,
-                                       batches=args.eval_batches, rng=eval_rng)
+            last_validation = held_out_loss()
             if not math.isfinite(last_validation):
                 raise RuntimeError("Pérdida de validación no finita.")
             save_checkpoint(args.checkpoint, model=model, optimizer=optimizer,
                             step=step, corpus_digest=corpus.digest,
-                            validation_loss=last_validation, seed=args.seed)
+                            validation_loss=last_validation, seed=args.seed,
+                            validation_baseline=validation_baseline,
+                            training_mode=training_mode,
+                            parent_sha256=parent_sha256)
             print(json.dumps({
                 "step": step, "train_loss": round(last_training, 5),
                 "validation_loss": round(last_validation, 5),
                 "parameters": model.parameter_count, "documents": corpus.documents,
+                "mode": training_mode,
+                "validation_baseline": round(validation_baseline, 5),
                 "saved": str(args.checkpoint),
             }, ensure_ascii=False), flush=True)
     return {
         "step": args.steps, "train_loss": last_training,
+        "training_mode": training_mode,
+        "validation_baseline": validation_baseline,
         "validation_loss": last_validation, "parameter_count": model.parameter_count,
         "corpus_sha256": corpus.digest, "trained_from_scratch": True,
         "checkpoint": str(args.checkpoint),
