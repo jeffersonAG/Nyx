@@ -1,0 +1,51 @@
+name: nyx
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    environment:
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_KEEP_ALIVE: 5m
+    volumes:
+      - nyx_models:/root/.ollama
+      - ./Modelfile:/config/Modelfile:ro
+    networks:
+      - nyx_internal
+    # Ollama no se expone al exterior.
+
+  api:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      NYX_OLLAMA_URL: http://ollama:11434
+      NYX_MODEL: nyx:0.1
+      NYX_DB_PATH: /data/nyx.db
+    volumes:
+      - nyx_memory:/data
+    depends_on:
+      - ollama
+    networks:
+      - nyx_internal
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:80"
+    depends_on:
+      - api
+    networks:
+      - nyx_internal
+
+networks:
+  nyx_internal:
+    driver: bridge
+
+volumes:
+  nyx_models:
+    name: nyx_models
+  nyx_memory:
+    name: nyx_memory
