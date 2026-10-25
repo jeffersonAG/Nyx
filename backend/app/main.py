@@ -419,6 +419,9 @@ def rename_session(session_id: int, request: SessionRequest,
 
 @app.delete("/api/sessions/{session_id}", status_code=204)
 def delete_session(session_id: int, user: security.Principal = Depends(_principal)):
+    if storage.get_session(session_id, user.id) is None:
+        raise HTTPException(status_code=404, detail="Sesión inexistente.")
+    brain.purge_session(user.id, session_id)
     if not storage.delete_session(session_id, user.id):
         raise HTTPException(status_code=404, detail="Sesión inexistente.")
 
@@ -580,6 +583,13 @@ def brain_rate_reply(request: BrainFeedbackRequest,
     return {k: found[k] for k in ("assistant_message_id","rating","note")}
 
 
+@app.delete("/api/brain/feedback/{message_id}", status_code=204)
+def brain_remove_feedback(message_id: int,
+                          user: security.Principal = Depends(_principal)):
+    if not brain.delete_feedback(user.id,message_id):
+        raise HTTPException(status_code=404, detail="Valoración inexistente.")
+
+
 @app.get("/api/brain/recommend")
 def brain_recommend(q: str = "", user: security.Principal = Depends(_principal)):
     if not 3 <= len(q.strip()) <= 300:
@@ -683,6 +693,7 @@ def knowledge(user: security.Principal = Depends(_principal)):
 def delete_knowledge(record_id: int, user: security.Principal = Depends(_principal)):
     if not storage.delete_research(record_id,user.id):
         raise HTTPException(status_code=404, detail="Investigación inexistente.")
+    brain.remove_vectors(user.id, "research", record_id)
 
 
 @app.get("/api/memory")
@@ -702,6 +713,7 @@ def create_memory(request: ItemRequest, user: security.Principal = Depends(_prin
 def remove_memory(memory_id: int, user: security.Principal = Depends(_principal)):
     if not storage.delete_memory(memory_id, user.id):
         raise HTTPException(status_code=404, detail="Nota inexistente.")
+    brain.remove_vectors(user.id, "memory", memory_id)
 
 
 @app.get("/api/profile")
