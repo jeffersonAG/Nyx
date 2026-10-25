@@ -18,7 +18,7 @@ services:
     restart: unless-stopped
     environment:
       NYX_OLLAMA_URL: http://ollama:11434
-      NYX_MODEL: nyx:0.2
+      NYX_MODEL: nyx:0.3
       NYX_DB_PATH: /data/nyx.db
       NYX_VOICE_PATH: /voices
     volumes:

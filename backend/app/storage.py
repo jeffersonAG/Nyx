@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from datetime import date
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -56,6 +58,14 @@ def init_db() -> None:
                 content TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+            CREATE TABLE IF NOT EXISTS local_profile (
+                id INTEGER PRIMARY KEY CHECK(id = 1),
+                timezone TEXT NOT NULL DEFAULT 'America/Costa_Rica',
+                city TEXT NOT NULL DEFAULT '',
+                country TEXT NOT NULL DEFAULT '',
+                tone TEXT NOT NULL DEFAULT 'natural'
+            );
+            INSERT OR IGNORE INTO local_profile(id) VALUES (1);
         """)
         columns = {row["name"] for row in db.execute("PRAGMA table_info(messages)")}
         if "session_id" not in columns:
@@ -66,6 +76,9 @@ def init_db() -> None:
             cur = db.execute("INSERT INTO sessions(title) VALUES (?)", ("Conversaciones anteriores (0.1)",))
             db.execute("UPDATE messages SET session_id=? WHERE session_id IS NULL", (cur.lastrowid,))
         db.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id)")
+        task_columns = {row["name"] for row in db.execute("PRAGMA table_info(tasks)")}
+        if "due_date" not in task_columns:
+            db.execute("ALTER TABLE tasks ADD COLUMN due_date TEXT")
 
 
 def create_session(title: str = "Nueva conversación") -> dict:
@@ -151,15 +164,20 @@ def add_message(role: str, content: str, session_id: int) -> dict:
 
 def list_tasks() -> list[dict]:
     with connect() as db:
-        rows = db.execute("SELECT id,title,completed,created_at FROM tasks ORDER BY id DESC").fetchall()
+        rows = db.execute("SELECT id,title,completed,created_at,due_date FROM tasks ORDER BY id DESC").fetchall()
     return [{**dict(row), "completed": bool(row["completed"])} for row in rows]
 
 
-def add_task(title: str) -> dict:
+def add_task(title: str, due_date: str | None = None) -> dict:
+    if due_date is not None:
+        try:
+            due_date = date.fromisoformat(due_date).isoformat()
+        except (ValueError, TypeError) as exc:
+            raise ValueError("Fecha de tarea inválida; utiliza YYYY-MM-DD.") from exc
     with connect() as db:
-        cur = db.execute("INSERT INTO tasks(title) VALUES (?)", (title,))
+        cur = db.execute("INSERT INTO tasks(title,due_date) VALUES (?,?)", (title, due_date))
         row = db.execute(
-            "SELECT id,title,completed,created_at FROM tasks WHERE id=?", (cur.lastrowid,)
+            "SELECT id,title,completed,created_at,due_date FROM tasks WHERE id=?", (cur.lastrowid,)
         ).fetchone()
     return {**dict(row), "completed": False}
 
@@ -170,7 +188,7 @@ def update_task(task_id: int, completed: bool) -> dict | None:
         if not cur.rowcount:
             return None
         row = db.execute(
-            "SELECT id,title,completed,created_at FROM tasks WHERE id=?", (task_id,)
+            "SELECT id,title,completed,created_at,due_date FROM tasks WHERE id=?", (task_id,)
         ).fetchone()
     return {**dict(row), "completed": bool(row["completed"])}
 
@@ -200,3 +218,32 @@ def add_memory(content: str) -> dict:
 def delete_memory(memory_id: int) -> bool:
     with connect() as db:
         return bool(db.execute("DELETE FROM memories WHERE id=?", (memory_id,)).rowcount)
+
+
+def get_profile() -> dict:
+    with connect() as db:
+        row = db.execute(
+            "SELECT timezone,city,country,tone FROM local_profile WHERE id=1"
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("La base de datos no ha sido inicializada.")
+    return dict(row)
+
+
+def update_profile(*, timezone: str, city: str, country: str, tone: str) -> dict:
+    if not isinstance(timezone, str) or len(timezone) > 70:
+        raise ValueError("Zona horaria inválida.")
+    try:
+        ZoneInfo(timezone)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValueError("No se encontró esa zona horaria IANA.") from exc
+    if not isinstance(city, str) or len(city) > 90 or not isinstance(country, str) or len(country) > 90:
+        raise ValueError("La ciudad y el país deben contener como máximo 90 caracteres.")
+    if tone not in {"natural", "tecnico", "academico"}:
+        raise ValueError("Tono conversacional no permitido.")
+    with connect() as db:
+        db.execute(
+            "UPDATE local_profile SET timezone=?,city=?,country=?,tone=? WHERE id=1",
+            (timezone, city.strip(), country.strip(), tone)
+        )
+    return get_profile()

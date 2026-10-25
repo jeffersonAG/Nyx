@@ -80,13 +80,19 @@ function Core({ state }) {
 
 export default function App() {
   const [tab, setTab] = useState('chat');
-  const [status, setStatus] = useState({ online: false, model: 'nyx:0.2' });
+  const [status, setStatus] = useState({ online: false, model: 'nyx:0.3' });
   const [voiceReady, setVoiceReady] = useState({ tts_ready: false, stt_ready: false });
   const [sessions, setSessions] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [memories, setMemories] = useState([]);
+  const [profile, setProfile] = useState({
+    timezone: 'America/Costa_Rica', city: '', country: '', tone: 'natural',
+  });
+  const [clockInfo, setClockInfo] = useState(null);
+  const [dueDate, setDueDate] = useState('');
+  const [savedProfile, setSavedProfile] = useState(false);
   const [draft, setDraft] = useState('');
   const [itemDraft, setItemDraft] = useState('');
   const [search, setSearch] = useState('');
@@ -122,6 +128,7 @@ export default function App() {
     const results = await Promise.allSettled([
       api('/api/sessions'), api('/api/tasks'), api('/api/memory'),
       api('/api/status'), api('/api/voice/status'),
+      api('/api/profile'), api('/api/context'),
     ]);
     if (results[0].status === 'fulfilled') {
       setSessions(results[0].value);
@@ -136,6 +143,8 @@ export default function App() {
     if (results[2].status === 'fulfilled') setMemories(results[2].value);
     if (results[3].status === 'fulfilled') setStatus(results[3].value);
     if (results[4].status === 'fulfilled') setVoiceReady(results[4].value);
+    if (results[5].status === 'fulfilled') setProfile(results[5].value);
+    if (results[6].status === 'fulfilled') setClockInfo(results[6].value);
     if (results.some(r => r.status === 'rejected')) setError('Algunos servicios no respondieron.');
   }, []);
 
@@ -353,6 +362,11 @@ export default function App() {
       setSelectedId(data.session_id);
       setMessages(await api('/api/sessions/' + data.session_id + '/messages'));
       await refreshSessions();
+      if (data.tool_events?.length) {
+        const changed = await Promise.allSettled([api('/api/tasks'), api('/api/memory')]);
+        if (changed[0].status === 'fulfilled') setTasks(changed[0].value);
+        if (changed[1].status === 'fulfilled') setMemories(changed[1].value);
+      }
       if (voiceEnabled && voiceReady.tts_ready) void playVoice(data.reply);
       else setVoiceState('idle');
     } catch (err) {
@@ -373,12 +387,29 @@ export default function App() {
     try {
       const resource = tab === 'tasks' ? 'tasks' : 'memory';
       await api('/api/' + resource, {
-        method: 'POST', body: JSON.stringify({ text: value }),
+        method: 'POST', body: JSON.stringify(tab === 'tasks' ? { text: value, due_date: dueDate || null } : { text: value }),
       });
       setItemDraft('');
+      if (tab === 'tasks') setDueDate('');
       if (tab === 'tasks') setTasks(await api('/api/tasks'));
       else setMemories(await api('/api/memory'));
     } catch (err) { setError(err.message); }
+  }
+
+  async function saveProfile(event) {
+    event.preventDefault();
+    setSavedProfile(false);
+    try {
+      const result = await api('/api/profile', {
+        method: 'PUT', body: JSON.stringify(profile),
+      });
+      setProfile(result);
+      setClockInfo(await api('/api/context'));
+      setSavedProfile(true);
+      setError('');
+    } catch (err) {
+      setError(err.message);
+    }
   }
   async function updateTask(task) {
     try {
@@ -513,7 +544,7 @@ export default function App() {
       <div className="top-center"><span className="bar-line" /> PERSONAL LOCAL INTELLIGENCE <span className="bar-line" /></div>
       <div className="top-state"><span className={'led ' + (status.online ? 'on' : 'off')} />
         <span>{status.online ? 'NÚCLEO CONECTADO' : 'MODELO DESCONECTADO'}</span>
-        <small>BUILD 0.2 / LOCALHOST</small>
+        <small>BUILD 0.3 / LOCALHOST</small>
       </div>
     </header>
     <div className="shell">
@@ -541,7 +572,7 @@ export default function App() {
           <div><div className="eyebrow">NYX / {tab.toUpperCase()} / SYSTEM INTERFACE</div>
             <h1>{MENU.find(n => n.id === tab)?.label}</h1></div>
           <div className="head-actions">
-            <span className="build-tag">◈ V0.2 · CRIMSON</span>
+            <span className="build-tag">◈ V0.3 · COGNITIVE</span>
             <button className="small-icon" title="Mostrar u ocultar panel de estado" onClick={() => setRightOpen(!rightOpen)}>▣</button>
           </div>
         </div>
@@ -666,6 +697,11 @@ export default function App() {
           <form className="record-form" onSubmit={createItem}>
             <input maxLength="500" value={itemDraft} onChange={e => setItemDraft(e.target.value)}
               placeholder={tab === 'tasks' ? 'Nueva tarea...' : 'Información que NYX debe recordar...'}/>
+            {tab === 'tasks' && <label className="due-date-field">
+              <span>FECHA OPCIONAL</span>
+              <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
+                aria-label="Fecha de vencimiento de la tarea" />
+            </label>}
             <button type="submit" disabled={!itemDraft.trim()}>＋ GUARDAR</button>
           </form>
           <div className="record-list">{(tab === 'tasks' ? tasks : memories).map(item =>
@@ -675,7 +711,8 @@ export default function App() {
                 onChange={() => updateTask(item)} aria-label="Completar tarea"/>}
               <div><strong className={item.completed ? 'done' : ''}>
                 {tab === 'tasks' ? item.title : item.content}</strong>
-                <small>{shortDate(item.created_at)}</small>
+                <small>{shortDate(item.created_at)}{item.due_date
+                  ? ' · FECHA: ' + item.due_date : ''}</small>
               </div>
               <button onClick={() => deleteItem(item.id)} title="Eliminar">×</button>
             </div>)}
@@ -707,6 +744,38 @@ export default function App() {
               <p>Tras la descarga, pulsa Sincronizar. Piper y Vosk se ejecutan localmente, sin enviar audio a una API comercial.</p>
             </div>
           </div>
+          <div className="settings-card"><div className="eyebrow">/ PERSONAL CONTEXT</div>
+            <h2>Perfil local</h2>
+            <p>Configura únicamente tu ciudad habitual y zona horaria. NYX no utiliza geolocalización actual y no necesita Google para conocer la fecha.</p>
+            <form className="profile-form" onSubmit={saveProfile}>
+              <label>Zona horaria IANA
+                <input value={profile.timezone} maxLength="70" required
+                  onChange={e => { setSavedProfile(false); setProfile({...profile, timezone:e.target.value}); }}
+                  placeholder="America/Costa_Rica" />
+              </label>
+              <label>Ciudad habitual (opcional)
+                <input value={profile.city} maxLength="90"
+                  onChange={e => { setSavedProfile(false); setProfile({...profile, city:e.target.value}); }}
+                  placeholder="Sin configurar" />
+              </label>
+              <label>País habitual (opcional)
+                <input value={profile.country} maxLength="90"
+                  onChange={e => { setSavedProfile(false); setProfile({...profile, country:e.target.value}); }}
+                  placeholder="Sin configurar" />
+              </label>
+              <label>Estilo conversacional
+                <select value={profile.tone}
+                  onChange={e => { setSavedProfile(false); setProfile({...profile, tone:e.target.value}); }}>
+                  <option value="natural">Natural y cercano</option>
+                  <option value="tecnico">Técnico y preciso</option>
+                  <option value="academico">Académico y didáctico</option>
+                </select>
+              </label>
+              <button type="submit" className="outline-button">◆ GUARDAR PERFIL</button>
+              {savedProfile && <p className="save-confirm" role="status">Perfil actualizado localmente.</p>}
+            </form>
+            <p className="muted">La ubicación física actual no se consulta ni se deduce de estos campos.</p>
+          </div>
           <div className="settings-card"><div className="eyebrow">/ SYSTEM</div>
             <h2>Estado de los módulos</h2>
             <div className="detail-row"><span>Modelo</span><b>{status.model}</b></div>
@@ -714,11 +783,13 @@ export default function App() {
             <div className="detail-row"><span>Síntesis de voz</span><b>{voiceReady.tts_ready ? 'PIPER LISTO' : 'PENDIENTE'}</b></div>
             <div className="detail-row"><span>Reconocimiento</span><b>{voiceReady.stt_ready ? 'VOSK LISTO' : 'PENDIENTE'}</b></div>
             <div className="detail-row"><span>Persistencia</span><b>SQLITE / DOCKER</b></div>
+            <div className="detail-row"><span>Herramientas</span><b>COGNITIVE CORE</b></div>
+            <div className="detail-row"><span>Zona horaria</span><b>{clockInfo?.timezone || profile.timezone}</b></div>
             <p className="muted">Micrófono desactivado por defecto. La captura se inicia únicamente al pulsar el botón correspondiente.</p>
           </div>
         </div>}
 
-        <footer className="footer">NYX 0.2 <span>◆</span> LOCAL INTELLIGENCE <span>◆</span> CRIMSON SYSTEM</footer>
+        <footer className="footer">NYX 0.3 <span>◆</span> LOCAL INTELLIGENCE <span>◆</span> CRIMSON SYSTEM</footer>
       </main>
       {rightOpen && <aside className="inspector">
         <div className="section-caption">/ NYX CORE</div>
@@ -729,6 +800,7 @@ export default function App() {
           <div className="detail-row"><span>TTS LOCAL</span><strong>{voiceReady.tts_ready ? 'READY' : 'PENDING'}</strong></div>
           <div className="detail-row"><span>MIC / STT</span><strong>{voiceReady.stt_ready ? 'READY' : 'PENDING'}</strong></div>
           <div className="detail-row"><span>VOZ</span><strong>{voiceProfile.toUpperCase()}</strong></div>
+          <div className="detail-row"><span>FECHA LOCAL</span><strong>{clockInfo?.date || '—'}</strong></div>
         </div>
         <div className="inspector-section"><div className="section-caption">/ QUICK STATUS</div>
           <div className="mini-stat"><span>CONVERSACIONES</span><b>{sessions.length}</b></div>

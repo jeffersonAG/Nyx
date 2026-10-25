@@ -486,3 +486,50 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   *, *::before, *::after { animation-duration: .01ms !important;
     transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+
+/* Cognitive Core 0.3: ajustes de perfil y fechas de tareas */
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 0;
+}
+.profile-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #cba7b6;
+  font: 11px 'Share Tech Mono','Courier New',monospace;
+}
+.profile-form input, .profile-form select, .due-date-field input {
+  color: #f2e6eb;
+  background: #0d0a0f;
+  border: 1px solid #642b42;
+  border-radius: 5px;
+  padding: 11px;
+  width: 100%;
+  min-width: 0;
+  color-scheme: dark;
+}
+.profile-form button {
+  align-self: flex-start;
+  margin-top: 7px;
+}
+.save-confirm { color: #7ce0a6 !important; }
+.due-date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 0 0 165px;
+  max-width: 100%;
+  font: 10px 'Share Tech Mono','Courier New',monospace;
+  color: #e181a0;
+}
+.due-date-field input { padding: 11px 8px; }
+.settings-layout { flex-wrap: wrap; align-content: flex-start; }
+.settings-card { min-width: min(100%, 255px); }
+@media (max-width: 680px) {
+  .due-date-field { flex: 1 1 100%; }
+  .profile-form button { width: 100%; }
+}

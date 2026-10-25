@@ -54,6 +54,23 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(storage.list_tasks()[0]["id"], task["id"])
         self.assertTrue(storage.create_session("Sigue funcionando")["id"])
 
+    def test_add_due_date_preserves_legacy_tasks(self):
+        dbfile = storage.db_path()
+        with storage.connect() as db:
+            db.execute("ALTER TABLE tasks RENAME TO tasks_saved")
+            db.execute("""CREATE TABLE tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                completed INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )""")
+            db.execute("INSERT INTO tasks(title) VALUES ('Tarea de 0.2')")
+            db.execute("DROP TABLE tasks_saved")
+        storage.init_db()
+        storage.init_db()
+        self.assertEqual(storage.list_tasks()[0]["title"], "Tarea de 0.2")
+        self.assertIsNone(storage.list_tasks()[0]["due_date"])
+
     def test_migrate_legacy_history_twice(self):
         # Simula la estructura exacta de messages en 0.1.
         dbfile = storage.db_path()

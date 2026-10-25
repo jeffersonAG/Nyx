@@ -61,6 +61,38 @@ class ApiTests(unittest.TestCase):
         ).status_code, 204)
         self.assertEqual(self.client.post("/api/chat", json={"text": ""}).status_code, 422)
 
+    def test_local_context_and_profile(self):
+        context = self.client.get("/api/context")
+        self.assertEqual(context.status_code, 200)
+        self.assertEqual(context.json()["timezone"], "America/Costa_Rica")
+        self.assertIsNone(context.json()["configured_city"])
+        invalid = self.client.put("/api/profile", json={
+            "timezone": "Invalid/Timezone", "city": "", "country": "", "tone": "natural"
+        })
+        self.assertEqual(invalid.status_code, 422)
+        changed = self.client.put("/api/profile", json={
+            "timezone": "America/Costa_Rica", "city": "Ciudad de prueba",
+            "country": "Costa Rica", "tone": "academico"
+        })
+        self.assertEqual(changed.status_code, 200)
+        self.assertEqual(self.client.get("/api/profile").json()["city"], "Ciudad de prueba")
+        self.assertEqual(self.client.get("/api/context").json()["configured_city"], "Ciudad de prueba")
+
+    def test_tasks_optional_due_date(self):
+        task = self.client.post("/api/tasks", json={
+            "text": "Repasar vectores", "due_date": "2026-11-05"
+        })
+        self.assertEqual(task.status_code, 201)
+        self.assertEqual(task.json()["due_date"], "2026-11-05")
+        self.assertEqual(self.client.post("/api/tasks", json={
+            "text": "Fecha inválida", "due_date": "mañana"
+        }).status_code, 422)
+
+    def test_date_chat_works_without_ollama(self):
+        response = self.client.post("/api/chat", json={"text": "¿Qué fecha es hoy?"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("America/Costa_Rica", response.json()["reply"])
+
     def test_voice_status_no_downloads(self):
         response = self.client.get("/api/voice/status")
         self.assertEqual(response.status_code, 200)
