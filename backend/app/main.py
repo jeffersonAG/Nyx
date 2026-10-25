@@ -567,6 +567,13 @@ def brain_rate_reply(request: BrainFeedbackRequest,
     return {k: found[k] for k in ("assistant_message_id","rating","note")}
 
 
+@app.get("/api/brain/recommend")
+def brain_recommend(q: str = "", user: security.Principal = Depends(_principal)):
+    if not 3 <= len(q.strip()) <= 300:
+        raise HTTPException(status_code=422, detail="Consulta de 3 a 300 caracteres.")
+    return brain.recommend_procedures(q, user.id)
+
+
 @app.get("/api/brain/recall")
 async def brain_recall(q: str = "", user: security.Principal = Depends(_principal)):
     if not 3 <= len(q.strip()) <= 300:
