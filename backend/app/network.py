@@ -65,10 +65,10 @@ async def connectivity_status(user_id: int) -> dict[str, Any]:
 
 def extract_weather_location(text: str, user_id: int) -> str | None:
     normalized = normalize(text)
-    if not re.search(r"\b(clima|temperatura|tiempo meteorologico|pronostico)\b", normalized):
+    if not re.search(r"\b(clima|temperatura|tiempo meteorologico|pronostico|tiempo hace|que tiempo|va a llover|lloviendo)\b", normalized):
         return None
     # No captar interrogaciones ambiguas como "qué es el clima tropical".
-    intent = re.search(r"\b(actual|ahora|hoy|pronostico|que tiempo|cual es el clima|dime el clima|clima en|temperatura en)\b", normalized)
+    intent = re.search(r"\b(actual|ahora|hoy|pronostico|que tiempo|cual es el clima|dime el clima|clima en|clima de|temperatura en|temperatura de|tiempo hace|llover|lloviendo)\b", normalized)
     if not intent:
         return None
     match = re.search(r"\b(?:en|de|para)\s+([a-záéíóúüñA-ZÁÉÍÓÚÜÑ][\w\sáéíóúüñÁÉÍÓÚÜÑ,-]{1,80})",
@@ -87,8 +87,10 @@ async def _resolve_location(city: str, country: str) -> dict | None:
     if clean in NEILY_ALIASES or clean.startswith("ciudad neily,"):
         return NEILY_CENTER.copy()
     params = {"name": city[:80], "count": 6, "language": "es"}
-    if normalize(country) in {"costa rica", "cr"}:
-        params["countryCode"] = "CR"
+    # Una ciudad solicitada expresamente puede encontrarse fuera del país
+    # habitual del usuario; no limitar los resultados geográficos a CR.
+    if "," in city:
+        params["name"] = city[:80]
     async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": AGENT},
                                  follow_redirects=False) as client:
         response = await client.get(GEO_URL, params=params)

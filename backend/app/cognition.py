@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
-from . import storage, network, direct_modules
+from . import storage, network, direct_modules, research
 from .math_engine import matrix_operation
 
 TOOLS = [
@@ -272,8 +272,12 @@ def _system_context(context: dict, user_id: int) -> str:
         f"zona horaria: {context['timezone']}.\n"
         f"Estilo de respuesta seleccionado por el usuario: {tone}.\n"
         f"Ciudad habitual declarada: {locale}. No es geolocalización actual.\n"
-        "Eres NYX, asistente local conversacional. Responde en español con naturalidad y precisión; "
-        "sé cálido sin fingir emociones humanas y evita introducciones genéricas repetitivas. "
+        "Eres NYX, asistente local conversacional y técnico. Responde en español con claridad, "
+        "calidez y rigor. Por defecto explica el razonamiento útil, da ejemplos cuando ayuden "
+        "y evita respuestas escuetas que dejen la duda sin resolver. Ajusta la extensión a la pregunta. "
+        "No simules consultar fuentes que no se han consultado ni inventes permisos ausentes. "
+        "Si necesitas datos actuales, orienta al usuario a una consulta explícita de Internet. "
+        "No confundas la memoria local con entrenamiento de parámetros del modelo. "
         "Para preguntas matemáticas, distingue correctamente conceptos y explica paso a paso; "
         "utiliza matrix_calculate para verificar operaciones concretas. "
         "El acceso a red está disponible solo mediante consultas controladas y públicas. "
@@ -316,6 +320,14 @@ async def generate_reply(text: str, session_id: int, ollama_url: str, model: str
     if modules is not None:
         return modules, []
 
+    requested_pair = research.extract_currency_request(text)
+    if requested_pair is not None:
+        if not network.online_enabled(user_id):
+            return "NYX está en modo local. Activa el acceso a Internet en Configuración para consultar tipos de cambio.", []
+        base, quote, amount = requested_pair
+        data = await research.exchange_rate(base, quote)
+        return research.exchange_response(data, amount), []
+
     requested_city = network.extract_weather_location(text, user_id)
     if requested_city is not None:
         if not network.online_enabled(user_id):
@@ -330,9 +342,16 @@ async def generate_reply(text: str, session_id: int, ollama_url: str, model: str
     web_query = network.extract_wiki_query(text)
     if web_query:
         if not network.online_enabled(user_id):
-            return "NYX está en modo local y no puede consultar Wikipedia. Tus datos locales siguen disponibles.", []
-        data = await network.search_encyclopedia(web_query)
-        return network.encyclopedia_response(data), []
+            return "NYX está en modo local. Activa Internet para investigar fuentes públicas.", []
+        data = await research.web_search(web_query, wikipedia_only=True)
+        return research.search_response(data), []
+
+    web_query = research.extract_web_query(text)
+    if web_query:
+        if not network.online_enabled(user_id):
+            return "NYX está en modo local. Activa Internet para investigar fuentes públicas.", []
+        data = await research.web_search(web_query)
+        return research.search_response(data), []
 
     history = storage.list_messages(session_id, limit=12, user_id=user_id)
     notes = storage.list_memories(limit=6, user_id=user_id)

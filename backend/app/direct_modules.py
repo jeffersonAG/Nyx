@@ -26,18 +26,24 @@ def module_reply(text: str, user_id: int) -> str | None:
     norm = normalize(text)
     if len(norm) > 500:
         return None
-    if re.search(r"\b(?:tareas?|pendientes?|actividades?)\b", norm) and re.search(
+    task_mention = bool(re.search(r"\b(?:tareas?|pendientes?|actividades?)\b", norm))
+    task_intent = bool(re.search(
         r"\b(?:cuant[ao]s?|numero|total|lista|listado|muestra|muestrame|"
-        r"consulta|consultar|revisa|ver|tengo|pendientes?|programad[ao]s?|"
-        r"organiza|organizar|cuales|dime|hoy)\b", norm
-    ):
+        r"consulta|consultar|revisa|ver|tengo|programad[ao]s?|"
+        r"organiza|organizar|cuales|dime|hoy|nombre|nombres|"
+        r"detalles?|descri(?:be|pcion)|llama|llaman|"
+        r"todas?|pendientes?|que|son)\b", norm))
+    if task_mention and task_intent:
         tasks = storage.list_tasks(user_id)
         today = _current_date(user_id)
         today_only = bool(re.search(r"\b(?:hoy|para hoy|de hoy)\b", norm))
         pending_only = bool(re.search(r"\b(?:pendientes?|sin completar|por hacer)\b", norm))
         relevant = [task for task in tasks if (not today_only or task["due_date"] == today)
                     and (not pending_only or not task["completed"])]
-        counts = bool(re.search(r"\b(?:cuant[ao]s?|numero|total)\b", norm))
+        wants_details = bool(re.search(
+            r"\b(?:nombre|nombres|llama|llaman|cuales|lista|listado|muestra|"
+            r"muestrame|detalles?|describe|descripcion|cada|todas|son)\b", norm))
+        counts = bool(re.search(r"\b(?:cuant[ao]s?|numero|total)\b", norm)) and not wants_details
         if counts:
             adjective = "pendientes " if pending_only else ""
             qualifier = "con fecha de hoy " if today_only else ""
