@@ -130,7 +130,7 @@ class NeuralNetworkTests(unittest.TestCase):
             data.append(data[0])
             data.append({"approved":False,"question":"No usar datos no aprobados",
                          "answer":"Este ejemplo no está autorizado"})
-            source.write_text("\\n".join(json.dumps(row,ensure_ascii=False)
+            source.write_text("\n".join(json.dumps(row,ensure_ascii=False)
                                         for row in data),encoding="utf-8")
             output=Path(tmp)/"prepared"
             result=curate(source,output,shards=3)
@@ -140,7 +140,7 @@ class NeuralNetworkTests(unittest.TestCase):
             self.assertEqual(corpus.documents,3)
             self.assertTrue((output/"03_aprobados.txt").is_file())
             self.assertNotIn("No usar datos no aprobados",
-                              "\\n".join(p.read_text(encoding="utf-8")
+                              "\n".join(p.read_text(encoding="utf-8")
                                 for p in output.glob("*.txt")))
             with self.assertRaises(ValueError):
                 curate(source,output,shards=3)
