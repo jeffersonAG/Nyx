@@ -60,6 +60,18 @@ def module_reply(text: str, user_id: int) -> str | None:
             lines.append(f"…y {len(relevant) - 30} tareas adicionales en el módulo Tareas.")
         return "\n".join(lines)
 
+    if re.search(r"\b(?:agenda|calendario|reuniones|reservas|eventos)\b", norm) and re.search(
+        r"\b(?:que|cuales|consulta|lista|muestra|dime|tengo|programados|pendientes)\b", norm
+    ) and not re.search(r"\b(?:agenda|programa|crea|reserva|anade|añade)\s+(?:un|una|el|la)?\s*(?:evento|reunion|reserva|recordatorio)\b", norm):
+        all_events = storage.list_calendar_events(user_id)
+        if not all_events:
+            return "No tienes eventos registrados en tu calendario."
+        lines = [f"Estos son {min(len(all_events), 25)} de tus {len(all_events)} eventos:"]
+        lines.extend(f"• #{item['id']} {item['title']} — "
+                     f"{item['start_at'].replace('T',' a las ')} ({item['kind']})"
+                     for item in all_events[:25])
+        return "\n".join(lines)
+
     if re.search(r"\b(?:memoria|recuerdos?|notas?)\b", norm) and re.search(
         r"\b(?:cuant[ao]s?|muestra|muestrame|consulta|recuerdas|"
         r"que sabes|lista|listar|tengo|dime|guardad[ao]s?)\b", norm

@@ -60,6 +60,27 @@ TOOLS = [
     },
     {
         "type": "function", "function": {
+            "name": "list_calendar",
+            "description": "Consulta los eventos propios del calendario local y sus fechas.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function", "function": {
+            "name": "create_calendar_event",
+            "description": "Programa un evento en calendario sólo si el usuario lo pide explícitamente con fecha, hora y duración.",
+            "parameters": {"type": "object", "properties": {
+                "title": {"type": "string"},
+                "kind": {"type": "string", "enum": ["task","meeting","reservation","reminder"]},
+                "start_at": {"type": "string", "description": "AAAA-MM-DDTHH:MM, hora local del usuario"},
+                "end_at": {"type": "string", "description": "AAAA-MM-DDTHH:MM, posterior al inicio"},
+                "reminder_minutes": {"type": "integer", "description": "Minutos de anticipación, 0 a 10080"},
+                "description": {"type": "string"}
+            }, "required": ["title","kind","start_at","end_at"]}
+        }
+    },
+    {
+        "type": "function", "function": {
             "name": "list_memories",
             "description": "Consulta las notas personales guardadas explícitamente en Memoria.",
             "parameters": {"type": "object", "properties": {}}
@@ -156,6 +177,25 @@ def execute_tool(name: str, args: dict, user_message: str, user_id: int) -> dict
         return storage.get_profile(user_id)
     if name == "list_tasks":
         return {"tasks": storage.list_tasks(user_id)[:40]}
+    if name == "list_calendar":
+        return {"events": storage.list_calendar_events(user_id)[:40]}
+    if name == "create_calendar_event":
+        if not re.search(r"\b(?:agenda|agendar|programa|programar|reserva|reservar|"
+                         r"recuerdame|recuérdame|crea (?:una? )?(?:evento|recordatorio))\b",
+                         user_message, re.I):
+            return {"error": "La creación de eventos requiere una solicitud expresa."}
+        try:
+            return {"created_calendar_event": storage.add_calendar_event(
+                user_id,
+                title=_safe_string(args.get("title"), 160),
+                kind=args.get("kind","task"),
+                start_at=args.get("start_at"),
+                end_at=args.get("end_at"),
+                reminder_minutes=args.get("reminder_minutes",15),
+                description=_safe_string(args.get("description"),1200),
+            )}
+        except (ValueError, TypeError) as exc:
+            return {"error": str(exc)}
     if name == "list_memories":
         return {"memories": storage.list_memories(limit=25, user_id=user_id)}
     if name == "search_history":
@@ -259,6 +299,53 @@ def _direct_command(text: str, context: dict, user_id: int) -> tuple[str, list[s
             return "La nota debe tener entre 1 y 500 caracteres.", []
         storage.add_memory(note, user_id)
         return "He guardado esa nota en la memoria local de NYX.", ["remember_note"]
+
+    # Fechas y horas explícitas: no inventar horarios ni duración.
+    if re.match(r"^(?:agenda|agendar|programa|programar|reserva|reservar|"
+                r"recuérdame|recuerdame|crea (?:un |una )?recordatorio)\b", cleaned, re.I):
+        normalized = unicodedata.normalize("NFKD", cleaned).encode("ascii", "ignore").decode().lower()
+        when = re.search(r"\b(\d{4}-\d{2}-\d{2})\s+(?:a\s+las?\s+)?"
+                         r"(\d{1,2}:\d{2})\b", cleaned, re.I)
+        if not when:
+            return ("Para agendarlo necesito una fecha y hora concretas, por ejemplo "
+                    "2026-11-05 a las 13:00. Para reuniones o reservas, indica también la duración.", [] )
+        try:
+            start = datetime.strptime(when.group(1)+"T"+when.group(2), "%Y-%m-%dT%H:%M")
+        except ValueError:
+            return "La fecha u hora indicada no es válida.", []
+        is_reminder = bool(re.search(r"\b(?:recordatorio|recuerdame)\b", normalized))
+        is_reservation = bool(re.search(r"\b(?:reserva|reservar)\b", normalized))
+        kind = "reminder" if is_reminder else "reservation" if is_reservation else "meeting"
+        length = re.search(r"\b(?:durante|por)\s+(\d{1,3})\s*(minutos?|mins?|horas?)\b",
+                           normalized)
+        if not is_reminder and not length:
+            return ("¿Cuánto debe durar el evento? Indica, por ejemplo, "
+                    "«por 60 minutos» o «por 2 horas». No reservaré un horario sin duración.", [])
+        minutes = 5 if is_reminder else int(length.group(1)) * (
+            60 if length.group(2).startswith("hora") else 1)
+        if minutes < 1 or minutes > 1440:
+            return "La duración debe ser de 1 a 1440 minutos.", []
+        prefix = re.sub(r"^(?:agenda|agendar|programa|programar|reserva|reservar|"
+                        r"recuérdame|recuerdame|crea (?:un |una )?recordatorio)\s*",
+                        "", cleaned, flags=re.I)
+        title = prefix[:max(0,when.start() - (len(cleaned)-len(prefix)))].strip(" ,:;.")
+        title = re.sub(r"\b(?:para\s+)?(?:el|la|un|una)\s*$","",title,flags=re.I).strip()
+        if not title:
+            return "Indica también qué actividad deseas agendar.", []
+        try:
+            item = storage.add_calendar_event(
+                user_id,title=title,kind=kind,description="",
+                start_at=start.strftime("%Y-%m-%dT%H:%M"),
+                end_at=(start+timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M"),
+                reminder_minutes=0 if is_reminder else 15,
+            )
+        except ValueError as exc:
+            return str(exc), []
+        return (f"Registré «{item['title']}» en tu calendario para "
+                f"{item['start_at'].replace('T',' a las ')}. "
+                f"Finaliza a las {item['end_at'][-5:]}. "
+                "Los avisos aparecen mientras NYX permanezca abierto.",
+                ["create_calendar_event"])
     return None
 
 
@@ -394,7 +481,7 @@ async def generate_reply(text: str, session_id: int, ollama_url: str, model: str
                 outcome = {"error": str(exc)}
             except Exception:
                 outcome = {"error": "La herramienta no pudo completar la operación."}
-        if any(key in outcome for key in ("created_task", "completed_task", "saved_memory")):
+        if any(key in outcome for key in ("created_task", "completed_task", "saved_memory", "created_calendar_event")):
             tool_events.append(name)
         messages.append({"role": "tool", "tool_name": name,
                          "content": json.dumps(outcome, ensure_ascii=False, default=str)})
@@ -413,7 +500,9 @@ async def generate_reply(text: str, session_id: int, ollama_url: str, model: str
         "Tarea completada: " + item["completed_task"]["title"] + "."
         if item.get("completed_task") else
         "Nota guardada en Memoria."
-        if "saved_memory" in item else ""
+        if "saved_memory" in item else
+        "Evento agendado: " + item["created_calendar_event"]["title"] + "."
+        if "created_calendar_event" in item else ""
         for item in outcomes
     ]
     confirmed = " ".join(part for part in summary if part)
