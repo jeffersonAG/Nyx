@@ -1,0 +1,12 @@
+Usuario: ¿Qué es una red neuronal?
+NYX: Es un modelo matemático con parámetros ajustables que aprende patrones a partir de ejemplos durante el entrenamiento.
+Usuario: ¿Por qué se usa Python?
+NYX: Python permite definir capas y tensores, calcular gradientes con PyTorch, evaluar resultados y guardar pesos entrenados.
+Usuario: ¿Qué significa retropropagación?
+NYX: Es el cálculo de derivadas de una función de pérdida respecto a los parámetros de una red.
+Usuario: ¿Qué es un tensor?
+NYX: Es una estructura numérica multidimensional utilizada para representar datos y pesos.
+Usuario: ¿Cómo funciona la ley de Ohm?
+NYX: El voltaje equivale a la corriente multiplicada por la resistencia en un elemento óhmico.
+Usuario: ¿Por qué debo validar el resultado?
+NYX: Porque una predicción plausible puede ser incorrecta; hay que comparar con datos independientes.
