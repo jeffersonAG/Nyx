@@ -19,7 +19,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import cognition, security, sentinel, storage, network
+from . import cognition, security, sentinel, storage, network, brain
 
 app = FastAPI(title="NYX 0.5.0", docs_url=None, redoc_url=None, openapi_url=None)
 OLLAMA_URL = os.environ.get("NYX_OLLAMA_URL", "http://ollama:11434").rstrip("/")
@@ -107,6 +107,35 @@ class VoiceRequest(BaseModel):
     mode: str = Field(default="conversation", pattern="^(conversation|system)$")
 
 
+class BrainCaseRequest(BaseModel):
+    kind: str = Field(pattern="^(experience|procedure|hypothesis)$")
+    title: str = Field(min_length=3, max_length=150)
+    situation: str = Field(min_length=5, max_length=900)
+    action_taken: str = Field(min_length=3, max_length=1300)
+    result: str = Field(default="", max_length=900)
+    outcome: str = Field(default="unknown", pattern="^(unknown|success|failure|partial)$")
+    evidence: str = Field(default="", max_length=900)
+
+
+class BrainCaseReview(BaseModel):
+    outcome: str = Field(pattern="^(unknown|success|failure|partial)$")
+    evidence: str = Field(default="", max_length=900)
+
+
+class BrainLinkRequest(BaseModel):
+    from_case_id: int = Field(ge=1)
+    to_case_id: int = Field(ge=1)
+    relation: str = Field(pattern="^(related_to|supports|contradicts|prerequisite_for)$")
+    evidence: str = Field(min_length=12, max_length=750)
+    source_url: str = Field(default="", max_length=500)
+
+
+class BrainFeedbackRequest(BaseModel):
+    assistant_message_id: int = Field(ge=1)
+    rating: str = Field(pattern="^(helpful|unhelpful)$")
+    note: str = Field(default="", max_length=400)
+
+
 _delivery_task: asyncio.Task | None = None
 
 
@@ -114,6 +143,7 @@ _delivery_task: asyncio.Task | None = None
 async def setup_db() -> None:
     global _delivery_task
     security.init_auth_db()
+    brain.init_db()
     sentinel.init_events_db()
     if os.environ.get("NYX_DISABLE_MAIL_WORKER") != "1":
         _delivery_task = asyncio.create_task(sentinel.delivery_loop())
@@ -440,7 +470,114 @@ async def chat(request: ChatRequest, user: security.Principal = Depends(_princip
             raise HTTPException(status_code=503,
                 detail=f"No se pudo consultar {MODEL}. Comprueba Ollama y el modelo.") from exc
     saved = storage.add_message("assistant", reply, sid, user.id)
+    if events:
+        # Never claim a task solved in the real world: only record tool execution.
+        try:
+            brain.record_tool_episode(user.id, saved["id"], message, reply, events)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                "No se pudo registrar experiencia de herramienta (sin datos sensibles)."
+            )
     return {"reply": reply, "message": saved, "session_id": sid, "tool_events": events}
+
+
+
+@app.get("/api/brain/status")
+def brain_status(user: security.Principal = Depends(_principal)):
+    return {**brain.metrics(user.id),
+            "embedding_model": os.environ.get("NYX_BRAIN_EMBED_MODEL", "").strip() or None,
+            "semantic_index_optional": True, "automatic_weight_training": False}
+
+
+@app.get("/api/brain/cases")
+def brain_cases(user: security.Principal = Depends(_principal)):
+    return brain.list_cases(user.id, 250)
+
+
+@app.post("/api/brain/cases", status_code=201)
+def brain_add_case(request: BrainCaseRequest,
+                   user: security.Principal = Depends(_principal)):
+    try:
+        return brain.create_case(user.id, **request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.patch("/api/brain/cases/{case_id}")
+def brain_review_case(case_id: int, request: BrainCaseReview,
+                      user: security.Principal = Depends(_principal)):
+    try:
+        found = brain.review_case(user.id, case_id, request.outcome, request.evidence)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if found is None:
+        raise HTTPException(status_code=404, detail="Experiencia inexistente.")
+    return found
+
+
+@app.delete("/api/brain/cases/{case_id}", status_code=204)
+def brain_remove_case(case_id: int, user: security.Principal = Depends(_principal)):
+    if not brain.delete_case(user.id, case_id):
+        raise HTTPException(status_code=404, detail="Experiencia inexistente.")
+
+
+@app.get("/api/brain/relations")
+def brain_relations(user: security.Principal = Depends(_principal)):
+    return brain.list_relations(user.id, 250)
+
+
+@app.post("/api/brain/relations", status_code=201)
+def brain_add_relation(request: BrainLinkRequest,
+                       user: security.Principal = Depends(_principal)):
+    try:
+        return brain.add_relation(user.id, **request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.delete("/api/brain/relations/{link_id}", status_code=204)
+def brain_remove_relation(link_id: int,
+                          user: security.Principal = Depends(_principal)):
+    if not brain.delete_relation(user.id, link_id):
+        raise HTTPException(status_code=404, detail="Relación inexistente.")
+
+
+@app.get("/api/brain/suggestions/{case_id}")
+def brain_link_suggestions(case_id: int,
+                           user: security.Principal = Depends(_principal)):
+    if not brain.get_case(user.id, case_id):
+        raise HTTPException(status_code=404, detail="Experiencia inexistente.")
+    return brain.propose_links(user.id, case_id)
+
+
+@app.get("/api/brain/feedback")
+def brain_all_feedback(user: security.Principal = Depends(_principal)):
+    return [{k: row[k] for k in ("assistant_message_id","rating","note")}
+            for row in brain.list_feedback(user.id, 300)]
+
+
+@app.post("/api/brain/feedback")
+def brain_rate_reply(request: BrainFeedbackRequest,
+                     user: security.Principal = Depends(_principal)):
+    try:
+        found = brain.record_feedback(user.id, **request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {k: found[k] for k in ("assistant_message_id","rating","note")}
+
+
+@app.get("/api/brain/recall")
+async def brain_recall(q: str = "", user: security.Principal = Depends(_principal)):
+    if not 3 <= len(q.strip()) <= 300:
+        raise HTTPException(status_code=422, detail="Consulta de 3 a 300 caracteres.")
+    return await brain.retrieve(q, user.id, OLLAMA_URL, max_results=8)
+
+
+@app.post("/api/brain/index")
+async def brain_index_next(user: security.Principal = Depends(_principal)):
+    # Explicit action. No background model downloads and no externally shared data.
+    return await brain.index_next(user.id, OLLAMA_URL, batch_size=8)
 
 
 @app.get("/api/tasks")
