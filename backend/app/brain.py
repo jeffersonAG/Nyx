@@ -477,6 +477,24 @@ def _candidates(user_id: int) -> list[dict]:
     return items
 
 
+def _embedding_input(text: str, model: str, *, is_query: bool) -> str:
+    """Optimized asymmetric retrieval prompts for multilingual EmbeddingGemma.
+
+    Google's model card recommends query/document prefixes for this model family.
+    Other embedding models retain their native text input.
+    """
+    if model.lower().startswith("embeddinggemma"):
+        return ("task: search result | query: " if is_query else
+                "title: none | text: ") + text
+    return text
+
+
+def _cache_model(model: str) -> str:
+    # Version cache when the indexing strategy changes; avoids mixing
+    # previous embeddings with vectors generated under asymmetric prompts.
+    return model + "|asymmetric-v1" if model.lower().startswith("embeddinggemma") else model
+
+
 def _fingerprint(text: str) -> str:
     return hashlib.sha256(text[:2400].encode("utf-8")).hexdigest()
 
@@ -575,9 +593,10 @@ async def retrieve(query: str, user_id: int, ollama_url: str,
     sem={}
     mode="lexical"
     if embed_model:
-        query_vectors=await _ollama_embed([query],ollama_url,embed_model)
+        query_vectors=await _ollama_embed([
+            _embedding_input(query,embed_model,is_query=True)],ollama_url,embed_model)
         if query_vectors:
-            stored=_read_vectors(user_id,embed_model,candidates)
+            stored=_read_vectors(user_id,_cache_model(embed_model),candidates)
             # Limited incremental index; avoid costly bulk embedding on 16GB systems.
             missing=[item for item in candidates
                 if (item["item_kind"],item["id"]) not in stored]
@@ -586,10 +605,10 @@ async def retrieve(query: str, user_id: int, ollama_url: str,
                 x["item_kind"]!="case",-x["id"]))
             batch=missing[:8]
             if batch:
-                new=await _ollama_embed([x["index_text"] for x in batch],
-                                        ollama_url,embed_model)
+                new=await _ollama_embed([_embedding_input(x["index_text"],embed_model,
+                    is_query=False) for x in batch],ollama_url,embed_model)
                 if new:
-                    _store_vectors(user_id,embed_model,batch,new)
+                    _store_vectors(user_id,_cache_model(embed_model),batch,new)
                     stored.update({(item["item_kind"],item["id"]):v
                                    for item,v in zip(batch,new)})
             sem={key:max(0.,cosine(query_vectors[0],v)) for key,v in stored.items()}
@@ -671,19 +690,20 @@ async def index_next(user_id: int, ollama_url: str, batch_size: int = 8) -> dict
         return {"enabled":False,"indexed":0,"remaining":None,
                 "message":"Configura un modelo local en NYX_BRAIN_EMBED_MODEL."}
     candidates=_candidates(user_id)
-    stored=_read_vectors(user_id,model,candidates)
+    stored=_read_vectors(user_id,_cache_model(model),candidates)
     missing=[item for item in candidates
              if (item["item_kind"],item["id"]) not in stored]
     if not missing:
         return {"enabled":True,"indexed":0,"remaining":0,"model":model,
                 "message":"Índice semántico al día."}
     batch=missing[:max(1,min(16,batch_size))]
-    vectors=await _ollama_embed([item["index_text"] for item in batch],ollama_url,model)
+    vectors=await _ollama_embed([_embedding_input(item["index_text"],model,
+        is_query=False) for item in batch],ollama_url,model)
     if not vectors:
         return {"enabled":True,"indexed":0,"remaining":len(missing),"model":model,
                 "message":"Modelo de embeddings local no disponible. "
                           "Instálalo en Ollama y comprueba su nombre."}
-    _store_vectors(user_id,model,batch,vectors)
+    _store_vectors(user_id,_cache_model(model),batch,vectors)
     return {"enabled":True,"indexed":len(batch),"remaining":len(missing)-len(batch),
             "model":model,"message":"Indización parcial completada."}
 
