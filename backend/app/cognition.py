@@ -257,6 +257,15 @@ def _direct_reply(text: str, context: dict) -> str | None:
     if re.search(r"\b(?:donde\s+estoy|mi\s+ubicacion\s+actual|donde\s+me\s+encuentro)\b", compact) and len(text) <= 120:
         return ("No tengo acceso a tu ubicación física actual. "
                 "Puedo utilizar tu ciudad habitual si la configuras en Perfil local.")
+    if len(text) <= 180 and re.search(
+        r"\b(?:puedes|tienes|es\s+posible|eres\s+capaz)\b.*"
+        r"\b(?:acceder|navegar|consultar|buscar|conectar)\b.*"
+        r"\b(?:internet|paginas?\s+web|web|red)\b", compact):
+        return ("Puedo buscar fuentes públicas mediante consultas explícitas de Internet "
+                "cuando el modo en línea está activado. Por ejemplo: «investiga en "
+                "Internet sobre redes VLAN». No tengo acceso ilimitado a todos los "
+                "sitios ni aprendo automáticamente los pesos del modelo; guardo "
+                "extractos de investigaciones solicitadas con su fuente.")
     return None
 
 

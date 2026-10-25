@@ -41,11 +41,11 @@ def norm(text: str) -> str:
 def extract_currency_request(text: str) -> tuple[str, str, Decimal | None] | None:
     n = norm(text)[:320]
     if not re.search(r"\b(?:tipo de cambio|tasa de cambio|cotizacion|convertir|conversion|"
-                     r"cuanto (?:vale|equivale|es)|dolar(?:es)?|euro(?:s)?|divisas?)\b", n):
+                     r"cuanto (?:vale|valen|equivale|equivalen|es|son)|dolar(?:es)?|euro(?:s)?|divisas?|usd|crc|eur)\b", n):
         return None
     # Pide tasas, no cualquier mención casual de una divisa.
     if not re.search(r"\b(?:cambio|cotizacion|convertir|conversion|precio|vale|equivale|"
-                     r"cuanto|a colones|en colones|a dolares|en dolares|a euros)\b", n):
+                     r"cuanto|a colones|en colones|a dolares|en dolares|a euros|a crc|a usd|a eur)\b", n):
         return None
     names = []
     for key, currency in CURRENCY_WORDS.items():
@@ -64,7 +64,7 @@ def extract_currency_request(text: str) -> tuple[str, str, Decimal | None] | Non
     )
     # 'colones a dólares' invierte el par explícito.
     amount = None
-    m = re.search(r"\b(?:convierte|convertir|cuanto (?:vale|equivale|es))\s+"
+    m = re.search(r"\b(?:convierte|convertir|cuanto (?:vale|valen|equivale|equivalen|es|son))\s+"
                   r"(?:son\s+)?([0-9]+(?:[.,][0-9]+)?)", n)
     if m:
         try:
